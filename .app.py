@@ -1,50 +1,36 @@
 import streamlit as st
-import words  # ייבוא המחסן של הראל בריקמן
+import words 
 
-# הגדרות כותרת ועיצוב בסיסי (הראל טוסון יוכל להמשיך מכאן)
-st.set_page_config(page_title="Alias AI - משחק מילים", page_icon="🎮")
-st.title("🎮 Alias AI - משחק הניחושים")
-st.markdown("---")
+st.set_page_config(page_title="Alias AI", page_icon="🤖")
+st.title("🤖 Alias AI")
 
-# ניהול מצב המשחק (Session State)
-if 'current_word' not in st.session_state:
-    st.session_state.current_word = None
+if 'secret_word' not in st.session_state:
+    st.session_state.secret_word = None
     st.session_state.hints = []
-    st.session_state.score = 0
 
-# תפריט בחירת קטגוריה
+# בחירת קטגוריה
 categories = words.get_categories()
-selected_category = st.selectbox("בחר נושא למשחק:", categories)
+selected_cat = st.selectbox("בחר נושא:", categories)
 
-# כפתור להתחלת משחק או החלפת מילה
-if st.button("משוך מילה חדשה"):
-    word, hints = words.get_random_word(selected_category)
-    st.session_state.current_word = word
-    st.session_state.hints = hints
-    st.success(f"נבחרה מילה מהקטגוריה: {selected_category}")
+if st.button("התחל משחק / החלף מילה"):
+    st.session_state.secret_word = words.get_random_word(selected_cat)
+    st.session_state.hints = []
+    st.success(f"המילה נבחרה מהנושא: {selected_cat}")
 
-# הצגת המשחק במידה ונבחרה מילה
-if st.session_state.current_word:
-    st.subheader(f"הקטגוריה: {selected_category}")
-    
-    # הצגת רמזים (הראל בריקמן הכין רשימה, אנחנו מציגים אותם)
-    st.write("💡 **רמזים מהמערכת:**")
+if st.session_state.secret_word:
+    # כאן רפאל יכניס את הקוד שמפעיל את Gemini
+    if st.button("בקש רמז מה-AI"):
+        new_hint = f"רמז זמני למילה שמתחילה ב-'{st.session_state.secret_word[0]}'... (רפאל, כאן נכנס ה-AI שלך!)"
+        st.session_state.hints.append(new_hint)
+
+    # הצגת הרמזים שה-AI ייצר
     for hint in st.session_state.hints:
         st.info(hint)
 
-    # תיבת ניחוש
-    user_guess = st.text_input("מה המילה לדעתך?")
-    
-    if st.button("בדוק ניחוש"):
-        if user_guess.strip() == st.session_state.current_word:
+    guess = st.text_input("מה המילה הסודית?")
+    if st.button("בדיקת ניחוש"):
+        if guess.strip().lower() == st.session_state.secret_word.lower():
             st.balloons()
-            st.success(f"כל הכבוד! המילה היא אכן: {st.session_state.current_word}")
-            st.session_state.score += 10
+            st.success("בול! כל הכבוד!")
         else:
-            st.error("לא בדיוק... נסה שוב או בקש רמז מה-AI (בקרוב!)")
-
-st.sidebar.metric("הניקוד שלך:", st.session_state.score)
-
-# כאן רפאל יחבר את ה-AI שלו בעתיד
-st.sidebar.markdown("---")
-st.sidebar.write("🤖 סטטוס AI: ממתין לרפאל...")
+            st.error("לא נכון, נסה שוב או בקש עוד רמז.")
