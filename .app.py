@@ -7,6 +7,9 @@ st.title("🤖 Alias AI")
 if 'secret_word' not in st.session_state:
     st.session_state.secret_word = None
     st.session_state.hints = []
+def calculate_score(hint_num):
+    scores = {1: 10, 2: 7, 3: 4, 4: 2}
+    return scores.get(hint_num, 0)
 
 # בחירת קטגוריה
 categories = words.get_categories()
@@ -26,6 +29,9 @@ if st.session_state.secret_word:
     # הצגת הרמזים שה-AI ייצר
     for hint in st.session_state.hints:
         st.info(hint)
+def calculate_score(hint_num):
+    scores = {1: 10, 2: 7, 3: 4, 4: 2}
+    return scores.get(hint_num, 0)
 
     guess = st.text_input("מה המילה הסודית?")
     if st.button("בדיקת ניחוש"):
@@ -34,3 +40,6 @@ if st.session_state.secret_word:
             st.success("בול! כל הכבוד!")
         else:
             st.error("לא נכון, נסה שוב או בקש עוד רמז.")
+def calculate_score(hint_num):
+    scores = {1: 10, 2: 7, 3: 4, 4: 2}
+    return scores.get(hint_num, 0)
