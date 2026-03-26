@@ -4,6 +4,14 @@ import sys
 import tkinter as tk
 from tkinter import messagebox, ttk
 import words
+def generate_ai_hint(word, previous_hints, category):
+    # כאן צריך להיכנס הקוד המדויק שרפאל כתב כדי לעקוף את המפתח
+    # אם אין לך אותו כרגע, נשתמש בגרסת "דמה" כדי שהמשחק לא יתקע:
+    try:
+        # כאן רפאל בטח השתמש ב-requests או בספריה אחרת
+        return None # כרגע זה מחזיר כלום כדי לעבור למילון של הראל
+    except:
+        return None
 # AliasGameApp implements the full Alias guessing game UI and logic.
 class AliasGameApp:
     # Initialize app state, UI styles, and starting state when constructed.
@@ -471,8 +479,17 @@ class AliasGameApp:
             self.guess_entry.configure(state="disabled")
             self.refresh_metrics()
             return
-        next_hint_count = min(self.attempts_used + 1, len(self.all_hints))
-        self.revealed_hints = self.all_hints[:next_hint_count]
+# ניסיון לקבל רמז מה-AI של רפאל
+        ai_hint = generate_ai_hint(self.secret_word, self.revealed_hints, self.current_category)
+
+        if ai_hint:
+            # אם ה-AI הצליח - מוסיפים את הרמז שלו לרשימה
+            self.revealed_hints.append(ai_hint)
+        else:
+            # גלגל הצלה: אם ה-AI נתקע, לוקחים את הרמז הבא מהמילון של הראל
+            next_hint_index = len(self.revealed_hints)
+            if next_hint_index < len(self.all_hints):
+                self.revealed_hints.append(self.all_hints[next_hint_index])
 
         self.guess_var.set("")
         self.set_status("לא נכון. נפתח רמז נוסף, קצת יותר קל.")
