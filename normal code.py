@@ -1,3 +1,4 @@
+import google.generativeai as genai
 import random
 
 import sys
@@ -5,12 +6,24 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import words
 def generate_ai_hint(word, previous_hints, category):
-    # כאן צריך להיכנס הקוד המדויק שרפאל כתב כדי לעקוף את המפתח
-    # אם אין לך אותו כרגע, נשתמש בגרסת "דמה" כדי שהמשחק לא יתקע:
+    # כאן מכניסים את המפתח כשיהיה לכם
+    api_key = "YOUR_GEMINI_API_KEY"
+    
+    # בדיקה: אם לא הוכנס מפתח אמיתי, הקוד ישר יחזור להראל בלי לנסות אפילו
+    if api_key == "YOUR_GEMINI_API_KEY" or not api_key:
+        return None
+
     try:
-        # כאן רפאל בטח השתמש ב-requests או בספריה אחרת
-        return None # כרגע זה מחזיר כלום כדי לעבור למילון של הראל
-    except:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro')
+        
+        prompt = f"Give a short, creative hint for the word '{word}' in the category '{category}'. " \
+                 f"Don't use the word itself. Previous hints: {previous_hints}"
+        
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception:
         return None
 # AliasGameApp implements the full Alias guessing game UI and logic.
 class AliasGameApp:
