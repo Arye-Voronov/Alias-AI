@@ -1,22 +1,9 @@
-import google.generativeai as genai
-import words  # מוודא שהקובץ של בריקמן מחובר
 import random
-genai.configure(api_key="YOUR_GEMINI_API_KEY")
 
-# הגדרת ה-AI של רפאל (חייב להופיע כאן כדי ששורה 479 תעבוד)
-def generate_ai_hint(word, previous_hints, category):
-    try:
-        model = genai.GenerativeModel('gemini-pro')
-        prompt = f"Give a short, creative hint for the word '{word}' in the category '{category}'. " \
-                 f"Don't use the word itself. Previous hints: {previous_hints}"
-        response = model.generate_content(prompt)
-        return response.text
-    except:
-        return None
 import sys
 import tkinter as tk
 from tkinter import messagebox, ttk
-
+import words
 # AliasGameApp implements the full Alias guessing game UI and logic.
 class AliasGameApp:
     # Initialize app state, UI styles, and starting state when constructed.
@@ -484,24 +471,9 @@ class AliasGameApp:
             self.guess_entry.configure(state="disabled")
             self.refresh_metrics()
             return
+        next_hint_count = min(self.attempts_used + 1, len(self.all_hints))
+        self.revealed_hints = self.all_hints[:next_hint_count]
 
-# --- ניסיון לקבל רמז מה-AI (הגישה של רפאל) ---
-            ai_hint = None
-            try:
-                # קוראים לפונקציה של רפאל (וודא שהיא מוגדרת למעלה בקובץ)
-                ai_hint = generate_ai_hint(self.secret_word, self.revealed_hints, self.current_category)
-            except Exception:
-                ai_hint = None
-
-            if ai_hint:
-                # אם ה-AI הצליח - מוסיפים את הרמז שלו לרשימה
-                self.revealed_hints.append(ai_hint)
-            else:
-                # --- גלגל הצלה (שורה 477 המקורית שלך) ---
-                # אם ה-AI נכשל, חוזרים לשיטה של בריקמן
-                next_hint_count = min(len(self.revealed_hints) + 1, len(self.all_hints))
-                self.revealed_hints = self.all_hints[:next_hint_count]
-                self.set_status("ה-AI עייף... משתמש ברמז מהמאגר")
         self.guess_var.set("")
         self.set_status("לא נכון. נפתח רמז נוסף, קצת יותר קל.")
         self.refresh_hints()
