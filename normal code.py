@@ -254,11 +254,11 @@ class AliasGameApp:
         game_card.grid_columnconfigure(0, weight=1)
         game_card.grid_rowconfigure(4, weight=1)
 
-        self.round_title = ttk.Label(game_card, text="\u200fמוכנים להתחיל?", style="CardTitle.TLabel")
+       self.round_title = ttk.Label(game_card, text="?מוכנים להתחיל", style="CardTitle.TLabel")
         self.round_title.grid(row=0, column=0, sticky="e")
         self.status_box = tk.Label(
             game_card,
-            text="\u200fבחר קטגוריה ולחץ על התחל משחק כדי לקבל את הרמז הראשון!",
+            text="!בחר קטגוריה ולחץ על התחל משחק כדי לקבל את הרמז הראשון",
             bg="#f3f7ff",
             fg=self.colors["info"],
             font=("Helvetica", 12, "bold"),
@@ -436,7 +436,7 @@ class AliasGameApp:
         self.round_finished = False
         self.guess_var.set("")
         self.guesses_list.delete(0, tk.END)
-        self.set_status("\u200fהרמז הראשון מוכן. תנסה לנחש!")
+        self.set_status("!הרמז הראשון מוכן. תנסה לנחש")
         self.update_round_title()
         self.refresh_hints()
         self.refresh_metrics()
@@ -467,7 +467,7 @@ class AliasGameApp:
 
         guess = self.guess_var.get().strip()
         if not guess:
-            self.set_status("\u200fצריך לכתוב ניחוש לפני שבודקים!")
+            self.set_status("!צריך לכתוב ניחוש לפני שבודקים")
             return
 
         self.attempts_used += 1
@@ -505,7 +505,7 @@ class AliasGameApp:
                 self.revealed_hints.append(self.all_hints[next_hint_index])
 
         self.guess_var.set("")
-        self.set_status("\u200fלא נכון. נפתח רמז נוסף, קצת יותר קל.")
+        self.set_status(".לא נכון. נפתח רמז נוסף, קצת יותר קל")
         self.refresh_hints()
         self.refresh_metrics()
         self.guess_entry.focus_set()
