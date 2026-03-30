@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import google.generativeai as genai
 import random
 
