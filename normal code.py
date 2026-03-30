@@ -253,7 +253,8 @@ class AliasGameApp:
         game_card.grid_columnconfigure(0, weight=1)
         game_card.grid_rowconfigure(4, weight=1)
 
-        self.round_title = ttk.Label(game_card, text="\u200fמוכנים להתחיל?", style="CardTitle.TLabel")        self.round_title.grid(row=0, column=0, sticky="e")
+        self.round_title = ttk.Label(game_card, text="\u200fמוכנים להתחיל?", style="CardTitle.TLabel")
+        self.round_title.grid(row=0, column=0, sticky="e")
         self.status_box = tk.Label(
             game_card,
             text="\u200fבחר קטגוריה ולחץ על התחל משחק כדי לקבל את הרמז הראשון!",
