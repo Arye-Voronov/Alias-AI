@@ -31,24 +31,21 @@ class AliasGameApp:
     # Initialize app state, UI styles, and starting state when constructed.
     def __init__(self, root):
         self.colors = {
-            "bg": "#eef4ff",
-            "hero": "#dfeaff",
-            "hero_accent": "#7c9cff",
-            "card": "#f9fbff",
-            "card_alt": "#eef3ff",
-            "card_inner": "#ffffff",
-            "text": "#122033",
-            "muted": "#6b7a90",
-            "primary": "#0a84ff",
-            "primary_hover": "#0066d6",
-            "success": "#30b05f",
-            "error": "#ff6b57",
-            "info": "#5e7cff",
-            "border": "#d6e3ff",
-            "entry": "#ffffff",
-            "list": "#ffffff",
-            "shadow": "#c9d8f7",
-            "warning": "#ffb340",
+            "hero":         "#C8102E",
+            "hero_accent":  "#9B0D23",
+            "card":         "#FFFFFF",
+            "card_alt":     "#FFF5F6",
+            "card_inner":   "#FFF0F2",
+            "entry":        "#FFFFFF",
+            "list":         "#FFFFFF",
+            "primary":      "#C8102E",
+            "text":         "#1A1A1A",
+            "muted":        "#888888",
+            "info":         "#C8102E",
+            "success":      "#1A7A4A",
+            "warning":      "#B45309",
+            "error":        "#9B0D23",
+            "bg":           "#FAFAFA",
         }
         self.root = root
         self.root.title("Alias AI")
@@ -74,78 +71,74 @@ class AliasGameApp:
         self.populate_categories()
         self.render_intro_state()
 
-    # Configure all ttk style themes and widget visual styles used by the app.
+    # Configure all ttk style themes and self.colors["bg" visual styles used by the app.
     def configure_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
-
-        style.configure("App.TFrame", background=self.colors["bg"])
-        style.configure("Card.TFrame", background=self.colors["card"], relief="flat")
-        style.configure("Hero.TFrame", background=self.colors["hero"], relief="flat")
-        style.configure(
-            "Title.TLabel",
-            background=self.colors["hero"],
-            foreground=self.colors["text"],
-            font=("Helvetica", 30, "bold"),
-            anchor="e",
-            justify="right",
-        )
-        style.configure(
-            "Subtitle.TLabel",
-            background=self.colors["hero"],
-            foreground=self.colors["muted"],
-            font=("Helvetica", 12),
-            anchor="e",
-            justify="right",
-        )
-        style.configure(
-            "CardTitle.TLabel",
-            background=self.colors["card"],
-            foreground=self.colors["text"],
-            font=("Helvetica", 15, "bold"),
-            anchor="e",
-            justify="right",
-        )
-        style.configure(
-            "Body.TLabel",
-            background=self.colors["card"],
-            foreground=self.colors["muted"],
-            font=("Helvetica", 12),
-            anchor="e",
-            justify="right",
-        )
-        style.configure(
-            "MetricValue.TLabel",
-            background=self.colors["card_alt"],
-            foreground=self.colors["text"],
-            font=("Helvetica", 21, "bold"),
-            anchor="center",
-            justify="center",
-        )
-        style.configure(
-            "MetricLabel.TLabel",
-            background=self.colors["card_alt"],
-            foreground=self.colors["info"],
-            font=("Helvetica", 10, "bold"),
-            anchor="center",
-            justify="center",
-        )
-        style.configure("Start.TButton", font=("Helvetica", 12, "bold"), padding=(18, 12), background=self.colors["primary"], foreground="#ffffff", borderwidth=0)
-        style.map("Start.TButton", background=[("active", self.colors["primary_hover"])], foreground=[("disabled", "#d7e8ff")])
-        style.configure("Next.TButton", font=("Helvetica", 12, "bold"), padding=(18, 12), background=self.colors["success"], foreground="#ffffff", borderwidth=0)
-        style.map("Next.TButton", background=[("active", "#25984f")], foreground=[("disabled", "#d7f5e1")])
-        style.configure("Guess.TButton", font=("Helvetica", 13, "bold"), padding=(18, 14), background=self.colors["hero_accent"], foreground="#ffffff", borderwidth=0)
-        style.map("Guess.TButton", background=[("active", "#5a7eff")], foreground=[("disabled", "#e0e8ff")])
-        style.configure(
-            "Game.Horizontal.TProgressbar",
-            troughcolor="#e5edff",
-            background=self.colors["hero_accent"],
-            bordercolor="#e5edff",
-            lightcolor=self.colors["hero_accent"],
-            darkcolor=self.colors["hero_accent"],
-            thickness=12,
-        )
-
+    
+        red       = "#C8102E"
+        red_dark  = "#9B0D23"
+        red_soft  = "#FFF0F2"
+        red_muted = "#F5C6CC"
+        white     = "#FFFFFF"
+        bg_main   = "#FAFAFA"
+        text_dark = "#1A1A1A"
+        muted     = "#888888"
+    
+        style.configure("App.TFrame", background=bg_main)
+    
+        style.configure("Title.TLabel",
+            background=red, foreground=white,
+            font=("Segoe UI", 32, "bold"), anchor="center")
+    
+        style.configure("Subtitle.TLabel",
+            background=red, foreground="#FFCCCC",
+            font=("Segoe UI", 11), anchor="center")
+    
+        style.configure("CardTitle.TLabel",
+            background=white, foreground=red,
+            font=("Segoe UI", 12, "bold"))
+    
+        style.configure("Body.TLabel",
+            background=white, foreground=muted,
+            font=("Segoe UI", 10))
+    
+        style.configure("MetricValue.TLabel",
+            background=white, foreground=red,
+            font=("Segoe UI", 24, "bold"))
+    
+        style.configure("MetricLabel.TLabel",
+            background=white, foreground=muted,
+            font=("Segoe UI", 10, "bold"))
+    
+        style.configure("Start.TButton",
+            font=("Segoe UI", 12, "bold"),
+            background=red, foreground=white, borderwidth=0)
+        style.map("Start.TButton",
+            background=[("active", red_dark), ("disabled", red_muted)])
+    
+        style.configure("Next.TButton",
+            font=("Segoe UI", 12),
+            background=white, foreground=red, borderwidth=1, relief="solid")
+        style.map("Next.TButton",
+            background=[("active", red_soft), ("disabled", white)],
+            foreground=[("disabled", muted)])
+    
+        style.configure("Guess.TButton",
+            font=("Segoe UI", 12, "bold"),
+            background=red_dark, foreground=white, borderwidth=0)
+        style.map("Guess.TButton",
+            background=[("active", "#7A0A1B"), ("disabled", red_muted)])
+    
+        style.configure("Game.Horizontal.TProgressbar",
+            troughcolor=red_muted, background=red, thickness=8, borderwidth=0)
+    
+        style.configure("TCombobox",
+            fieldbackground=white, background=white, foreground=text_dark,
+            selectbackground=red_soft, selectforeground=text_dark)
+        style.map("TCombobox",
+        fieldbackground=[("readonly", white)],
+        foreground=[("readonly", text_dark)])
     # Build the GUI layout with frames, buttons, labels and interactive widgets.
     def build_layout(self):
         self.root.grid_columnconfigure(0, weight=1)
@@ -544,6 +537,7 @@ class AliasGameApp:
         if not self.revealed_hints:
             self.hints_text.insert("1.0", "כאן יופיעו הרמזים של הסבב !")
             self.hints_text.tag_add("rtl", "1.0", "end")
+            
             self.hints_text.configure(state="disabled")
             return
 
