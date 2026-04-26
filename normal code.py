@@ -542,7 +542,7 @@ class AliasGameApp:
         self.hints_text.delete("1.0", tk.END)
 
         if not self.revealed_hints:
-            self.hints_text.insert("1.0", "כאן יופיעו הרמזים של הסבב")
+            self.hints_text.insert("1.0", "כאן יופיעו הרמזים של הסבב !")
             self.hints_text.tag_add("rtl", "1.0", "end")
             self.hints_text.configure(state="disabled")
             return
