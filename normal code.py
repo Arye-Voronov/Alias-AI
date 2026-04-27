@@ -186,7 +186,7 @@ class AliasGameApp:
         controls_card.grid_columnconfigure(3, weight=0)
 
         ttk.Label(controls_card, text="קטגוריה", style="CardTitle.TLabel").grid(
-            row=0, column=3, sticky="e", padx=(12, 0)
+            row=0, column=3, sticky="ne", padx=(0, 10)
         )
 
         self.category_var = tk.StringVar()
@@ -470,7 +470,7 @@ class AliasGameApp:
             points = words.get_points_for_hint_number(len(self.revealed_hints))
             self.score += points
             self.round_finished = True
-            self.set_status(f"בול! קיבלת {points} נקודות. המילה הייתה: {self.secret_word}")
+            self.set_status(f"בול! קיבלת {points} נקודות. המילה הייתה: {self.secret_word}!")
             self.submit_button.configure(state="disabled")
             self.next_button.configure(state="normal")
             self.guess_entry.configure(state="disabled")
@@ -535,7 +535,7 @@ class AliasGameApp:
         self.hints_text.delete("1.0", tk.END)
 
         if not self.revealed_hints:
-            self.hints_text.insert("1.0", "כאן יופיעו הרמזים של הסבב !")
+            self.hints_text.insert("1.0", "כאן יופיעו הרמזים של הסבב")
             self.hints_text.tag_add("rtl", "1.0", "end")
             
             self.hints_text.configure(state="disabled")
