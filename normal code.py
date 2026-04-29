@@ -188,7 +188,6 @@ class AliasGameApp:
         ttk.Label(controls_card, text="קטגוריה", style="CardTitle.TLabel").grid(
            row=0, column=3, sticky="ne", padx=(0, 15)
         )
-        )
 
         self.category_var = tk.StringVar()
         self.category_combo = ttk.Combobox(
