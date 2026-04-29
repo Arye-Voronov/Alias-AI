@@ -186,7 +186,7 @@ class AliasGameApp:
         controls_card.grid_columnconfigure(3, weight=0)
 
         ttk.Label(controls_card, text="קטגוריה", style="CardTitle.TLabel").grid(
-            row=0, column=3, sticky="ne", padx=(0, 10)
+          row=0, column=3, sticky="ne", padx=(0, 10)
         )
 
         self.category_var = tk.StringVar()
