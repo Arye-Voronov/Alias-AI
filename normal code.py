@@ -1,31 +1,92 @@
 # -*- coding: utf-8 -*-
-import google.generativeai as genai
+import json
 import random
-
 import sys
 import tkinter as tk
+import urllib.error
+import urllib.request
 from tkinter import messagebox, ttk
 import words
-def generate_ai_hint(word, previous_hints, category):
-    # כאן מכניסים את המפתח כשיהיה לכם
-    api_key = "YOUR_GEMINI_API_KEY"
-    
-    # בדיקה: אם לא הוכנס מפתח אמיתי, הקוד ישר יחזור להראל בלי לנסות אפילו
-    if api_key == "YOUR_GEMINI_API_KEY" or not api_key:
-        return None
+
+
+# שם המודל המקומי ש-Ollama יריץ בשביל רמזי AI.
+OLLAMA_MODEL = "hf.co/tensorblock/Hebrew-Gemma-11B-Instruct-GGUF"
+
+
+# מנקה תשובת AI מכותרות וממרכאות כדי להציג רק את הרמז עצמו.
+def clean_ai_hint(hint):
+    hint = hint.strip()
+    for prefix in ("הרמז:", "רמז:", "Hint:"):
+        if hint.startswith(prefix):
+            hint = hint[len(prefix):].strip()
+    return hint.strip("\"'“”")
+
+
+# בודק שהרמז שה-AI החזיר באמת מתאים למשחק ולא חושף את המילה.
+def is_usable_ai_hint(hint, word):
+    normalized_hint = words.normalize_guess(hint)
+    if not normalized_hint:
+        return False
+    if words.normalize_guess(word) in normalized_hint:
+        return False
+    if len(normalized_hint) < 6:
+        return False
+    if normalized_hint.count(" ") == 0 and any(mark in normalized_hint for mark in "?!"):
+        return False
+    return True
+
+
+# הופך תשובת AI ארוכה לרשימה של 5 רמזים תקינים.
+def parse_ai_hints(text, word):
+    hints = []
+    for line in text.splitlines():
+        hint = clean_ai_hint(line)
+        hint = hint.lstrip("-•0123456789. )(").strip()
+        if is_usable_ai_hint(hint, word):
+            hints.append(hint)
+        if len(hints) == words.MAX_HINTS:
+            break
+    return hints if len(hints) == words.MAX_HINTS else None
+
+
+# שולח ל-Ollama את המילה והרמזים המוכנים, ומבקש ממנו לשפר אותם.
+def generate_ollama_hints(word, prepared_hints, category):
+    prompt = (
+        "כתוב 5 רמזים בעברית למשחק Alias.\n"
+        f"המילה הסודית היא: {word}\n"
+        f"הקטגוריה היא: {category}\n"
+        f"הרמזים המוכנים שכבר קיימים, מהקשה לקל, הם: {prepared_hints}\n"
+        "שפר את הרמזים האלה מעט, אבל שמור על אותו רעיון ועל אותו סדר קושי.\n"
+        "רמז 1 צריך להיות הכי קשה, ורמז 5 הכי קל.\n"
+        "אסור להשתמש במילה הסודית עצמה או בהטיות ישירות שלה.\n"
+        "אל תיתן משחק אותיות, אל תכתוב את האותיות של המילה, ואל תשתמש בצליל של המילה.\n"
+        "ענה ב-5 שורות בלבד. בכל שורה רמז אחד קצר. בלי הסברים ובלי כותרות."
+    )
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+    }
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
-        
-        prompt = f"Give a short, creative hint for the word '{word}' in the category '{category}'. " \
-                 f"Don't use the word itself. Previous hints: {previous_hints}"
-        
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception:
+        request = urllib.request.Request(
+            "http://127.0.0.1:11434/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return parse_ai_hints(data.get("response", ""), word)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError):
         return None
+
+
+# שכבת עטיפה: כרגע ה-AI היחיד הוא Ollama, אבל כך קל להחליף ספק בעתיד.
+def generate_ai_hints(word, prepared_hints, category):
+    return generate_ollama_hints(word, prepared_hints, category)
+
+
 # AliasGameApp implements the full Alias guessing game UI and logic.
 class AliasGameApp:
     # Initialize app state, UI styles, and starting state when constructed.
@@ -53,6 +114,7 @@ class AliasGameApp:
         self.root.minsize(820, 620)
         self.root.configure(bg=self.colors["bg"])
 
+        # מצב המשחק: ניקוד, מילה נוכחית, רמזים, ניסיונות וקטגוריה.
         self.score = 0
         self.secret_word = None
         self.all_hints = []
@@ -65,7 +127,9 @@ class AliasGameApp:
         self.category_options = []
         self.category_lookup = {}
         self.used_words = set()
+        self.hint_source_var = tk.StringVar(value="prepared")
 
+        # בניית המסך והכנת הנתונים הראשוניים.
         self.configure_styles()
         self.build_layout()
         self.populate_categories()
@@ -76,6 +140,7 @@ class AliasGameApp:
         style = ttk.Style()
         style.theme_use("clam")
     
+        # צבעי בסיס לסגנונות Tkinter/ttk.
         red       = "#C8102E"
         red_dark  = "#9B0D23"
         red_soft  = "#FFF0F2"
@@ -144,11 +209,13 @@ class AliasGameApp:
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
 
+        # מעטפת ראשית שמחזיקה את כל אזורי הממשק.
         outer = ttk.Frame(self.root, style="App.TFrame", padding=20)
         outer.grid(sticky="nsew")
         outer.grid_columnconfigure(0, weight=1)
         outer.grid_rowconfigure(3, weight=1)
 
+        # כותרת עליונה של המשחק.
         header = tk.Frame(
             outer,
             bg=self.colors["hero"],
@@ -178,6 +245,7 @@ class AliasGameApp:
         )
         self.hero_badge.grid(row=0, column=1, rowspan=2, sticky="w", padx=(0, 12))
 
+        # אזור בחירת קטגוריה, התחלת משחק ובחירת מקור הרמזים.
         controls_card = tk.Frame(outer, bg=self.colors["card"], bd=0, highlightthickness=1, highlightbackground="#ffffff", padx=20, pady=20)
         controls_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         controls_card.grid_columnconfigure(0, weight=1)
@@ -216,6 +284,42 @@ class AliasGameApp:
         )
         self.next_button.grid(row=0, column=0, sticky="ew")
 
+        # בחירה בין רמזים מוכנים לבין רמזים שה-AI משפר בתחילת כל סבב.
+        hint_source_frame = tk.Frame(controls_card, bg=self.colors["card"])
+        hint_source_frame.grid(row=1, column=2, columnspan=2, sticky="e", pady=(14, 0), padx=(0, 10))
+
+        self.prepared_hints_radio = tk.Radiobutton(
+            hint_source_frame,
+            text="רמזים מוכנים מראש",
+            variable=self.hint_source_var,
+            value="prepared",
+            bg=self.colors["card"],
+            fg=self.colors["text"],
+            activebackground=self.colors["card"],
+            activeforeground=self.colors["primary"],
+            selectcolor=self.colors["card_inner"],
+            font=("Helvetica", 11, "bold"),
+            anchor="e",
+            justify="right",
+        )
+        self.prepared_hints_radio.grid(row=0, column=1, sticky="e", padx=(14, 0))
+
+        self.ai_hints_radio = tk.Radiobutton(
+            hint_source_frame,
+            text="AI משפר רמזים מוכנים",
+            variable=self.hint_source_var,
+            value="ai",
+            bg=self.colors["card"],
+            fg=self.colors["text"],
+            activebackground=self.colors["card"],
+            activeforeground=self.colors["primary"],
+            selectcolor=self.colors["card_inner"],
+            font=("Helvetica", 11, "bold"),
+            anchor="e",
+            justify="right",
+        )
+        self.ai_hints_radio.grid(row=0, column=0, sticky="e")
+
         self.categories_summary = tk.Label(
             controls_card,
             text="",
@@ -225,8 +329,9 @@ class AliasGameApp:
             anchor="e",
             justify="right",
         )
-        self.categories_summary.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        self.categories_summary.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
 
+        # כרטיסי מדדים: ניקוד, כמות רמזים פתוחים וקטגוריה.
         metrics = ttk.Frame(outer, style="App.TFrame")
         metrics.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         for index in range(3):
@@ -236,12 +341,14 @@ class AliasGameApp:
         self.hints_value = self.build_metric(metrics, 1, "רמזים פתוחים", f"0/{words.MAX_HINTS}")
         self.category_value = self.build_metric(metrics, 2, "קטגוריה", "עדיין לא נבחרה")
 
+        # אזור התוכן הראשי: רמזים בצד אחד וניחושים בצד השני.
         content = ttk.Frame(outer, style="App.TFrame")
         content.grid(row=3, column=0, sticky="nsew")
         content.grid_columnconfigure(0, weight=3)
         content.grid_columnconfigure(1, weight=2)
         content.grid_rowconfigure(0, weight=1)
 
+        # לוח הסבב: סטטוס, התקדמות ורשימת הרמזים שנפתחו.
         game_card = tk.Frame(content, bg=self.colors["card"], bd=0, highlightthickness=1, highlightbackground="#ffffff", padx=22, pady=22)
         game_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         game_card.grid_columnconfigure(0, weight=1)
@@ -297,6 +404,7 @@ class AliasGameApp:
         self.hints_text.tag_configure("hint_points", foreground=self.colors["muted"], font=("Helvetica", 11, "bold"))
         self.hints_text.configure(state="disabled")
 
+        # לוח הניחוש: שדה כתיבה, כפתור בדיקה והיסטוריית ניחושים.
         input_card = tk.Frame(content, bg=self.colors["card"], bd=0, highlightthickness=1, highlightbackground="#ffffff", padx=22, pady=22)
         input_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         input_card.grid_columnconfigure(0, weight=1)
@@ -313,11 +421,13 @@ class AliasGameApp:
             relief="solid",
             bd=1,
             bg=self.colors["entry"],
+            fg=self.colors["text"],
             highlightthickness=2,
             highlightbackground="#dbe6ff",
             highlightcolor=self.colors["primary"],
             insertbackground=self.colors["text"],
             disabledbackground="#f3f6fb",
+            disabledforeground=self.colors["muted"],
         )
         self.guess_entry.grid(row=1, column=0, sticky="ew", pady=(10, 12))
         self.guess_entry.bind("<Return>", self.submit_guess)
@@ -359,6 +469,7 @@ class AliasGameApp:
         )
         self.footer_label.grid(row=5, column=0, sticky="sew", pady=(14, 0))
 
+    # בונה כרטיס מדד קטן עבור הניקוד/רמזים/קטגוריה.
     def build_metric(self, parent, column, label, value):
         card = tk.Frame(parent, bg=self.colors["card_alt"], bd=0, highlightthickness=1, highlightbackground="#ffffff", padx=4, pady=4)
         card.grid(row=0, column=column, sticky="ew", padx=6)
@@ -384,11 +495,13 @@ class AliasGameApp:
         elif labels:
             self.category_combo.current(0)
 
+    # מערבב את המילים בקטגוריה כדי שכל משחק יהיה בסדר שונה.
     def build_rounds(self, category):
         entries = list(words.get_words_by_category(category).items())
         self.randomizer.shuffle(entries)
         return entries
 
+    # מחזיר את המילה הבאה שלא השתמשנו בה עדיין במשחק הנוכחי.
     def get_next_entry(self):
         entries = self.build_rounds(self.current_category)
         available_entries = [(word, hints) for word, hints in entries if word not in self.used_words]
@@ -398,6 +511,21 @@ class AliasGameApp:
         self.used_words.add(word)
         return word, hints
 
+    # מכין את רשימת הרמזים לסבב: מוכנים מראש או משופרים על ידי AI.
+    def build_hints_for_current_round(self):
+        prepared_hints = words.order_hints_by_difficulty(self.all_hints)
+        if self.hint_source_var.get() == "ai":
+            category_label = words.get_category_label(self.current_category)
+            self.set_status("מכין רמזי AI לסבב הזה...")
+            self.root.update_idletasks()
+            ai_hints = generate_ai_hints(self.secret_word, prepared_hints, category_label)
+            if ai_hints:
+                return ai_hints
+            self.set_status("ה-AI לא החזיר רמזים טובים, אז הסבב משתמש ברמזים המוכנים.")
+
+        return prepared_hints
+
+    # מתחיל משחק חדש בקטגוריה שנבחרה ומאפס ניקוד ומילים שכבר שוחקו.
     def start_game(self):
         self.populate_categories()
         selected_label = self.category_var.get().strip()
@@ -424,7 +552,10 @@ class AliasGameApp:
 
         self.round_number += 1
         self.all_hints = words.order_hints_by_difficulty(hints)
-        self.revealed_hints = self.all_hints[:1]
+        self.all_hints = self.build_hints_for_current_round()
+        self.revealed_hints = []
+        if self.all_hints:
+            self.revealed_hints.append(self.all_hints[0])
         self.attempts_used = 0
         self.round_finished = False
         self.guess_var.set("")
@@ -438,6 +569,7 @@ class AliasGameApp:
         self.guess_entry.configure(state="normal")
         self.guess_entry.focus_set()
 
+    # מסיים את המשחק כאשר נגמרו המילים בקטגוריה.
     def finish_game(self):
         self.secret_word = None
         self.all_hints = []
@@ -485,17 +617,9 @@ class AliasGameApp:
             self.guess_entry.configure(state="disabled")
             self.refresh_metrics()
             return
-# ניסיון לקבל רמז מה-AI של רפאל
-        ai_hint = generate_ai_hint(self.secret_word, self.revealed_hints, self.current_category)
-
-        if ai_hint:
-            # אם ה-AI הצליח - מוסיפים את הרמז שלו לרשימה
-            self.revealed_hints.append(ai_hint)
-        else:
-            # גלגל הצלה: אם ה-AI נתקע, לוקחים את הרמז הבא מהמילון של הראל
-            next_hint_index = len(self.revealed_hints)
-            if next_hint_index < len(self.all_hints):
-                self.revealed_hints.append(self.all_hints[next_hint_index])
+        next_hint_index = len(self.revealed_hints)
+        if next_hint_index < len(self.all_hints):
+            self.revealed_hints.append(self.all_hints[next_hint_index])
 
         self.guess_var.set("")
         self.set_status(".לא נכון. נפתח רמז נוסף, קצת יותר קל")
@@ -503,12 +627,13 @@ class AliasGameApp:
         self.refresh_metrics()
         self.guess_entry.focus_set()
 
+    # מעדכן את כותרת הסבב לפי מספר הסבב והקטגוריה.
     def update_round_title(self):
         category_label = words.get_category_label(self.current_category) if self.current_category else "ללא קטגוריה"
         self.round_title.configure(text=f"סבב {self.round_number} | {category_label}")
 
+    # מציג הודעת מצב בצבע מתאים לפי סוג האירוע.
     def set_status(self, text):
-        lower_text = text.lower()
         bg = "#eef6ff"
         fg = self.colors["info"]
         if "בול" in text or "נקודות" in text:
@@ -523,6 +648,7 @@ class AliasGameApp:
 
         self.status_box.configure(text=text, bg=bg, fg=fg)
 
+    # מרענן את המדדים שמוצגים מעל אזור המשחק.
     def refresh_metrics(self):
         category_text = words.get_category_label(self.current_category) if self.current_category else "עדיין לא נבחרה"
         self.score_value.configure(text=str(self.score))
@@ -530,6 +656,7 @@ class AliasGameApp:
         self.category_value.configure(text=category_text)
         self.progress.configure(value=self.attempts_used)
 
+    # מציג את כל הרמזים שנפתחו עד עכשיו בתוך תיבת הטקסט.
     def refresh_hints(self):
         self.hints_text.configure(state="normal")
         self.hints_text.delete("1.0", tk.END)
@@ -564,6 +691,7 @@ class AliasGameApp:
         self.hints_text.tag_add("rtl", "1.0", "end")
         self.hints_text.configure(state="disabled")
 
+    # מצב פתיחה לפני שהמשתמש התחיל סבב.
     def render_intro_state(self):
         self.refresh_metrics()
         self.refresh_hints()
