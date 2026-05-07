@@ -34,7 +34,7 @@ ollama -v
 מריצים:
 
 ```bash
-ollama run hf.co/tensorblock/Hebrew-Gemma-11B-Instruct-GGUF
+ollama run gemma3:4b
 ```
 
 מחכים שההורדה תסתיים. זה יכול לקחת כמה דקות.
@@ -56,7 +56,7 @@ ollama list
 צריך לראות ברשימה:
 
 ```text
-hf.co/tensorblock/Hebrew-Gemma-11B-Instruct-GGUF
+gemma3:4b
 ```
 
 ## 5. מפעילים את המשחק
@@ -102,11 +102,11 @@ https://ollama.com/download
 מורידים אותו שוב:
 
 ```bash
-ollama run hf.co/tensorblock/Hebrew-Gemma-11B-Instruct-GGUF
+ollama run gemma3:4b
 ```
 
 ### הרמזים איטיים
 
-המודל גדול, ולכן במחשבים חלשים יצירת רמזים יכולה לקחת זמן.
+המודל הראשון אחרי הורדה יכול להיות איטי יותר, ואחר כך בדרך כלל מגיב מהר יותר.
 
 אפשר לשחק בלי AI עם האפשרות `רמזים מוכנים מראש`.
