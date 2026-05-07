@@ -128,6 +128,7 @@ class AliasGameApp:
         self.category_lookup = {}
         self.used_words = set()
         self.hint_source_var = tk.StringVar(value="prepared")
+        self.ai_fallback_message = None
 
         # בניית המסך והכנת הנתונים הראשוניים.
         self.configure_styles()
@@ -521,7 +522,7 @@ class AliasGameApp:
             ai_hints = generate_ai_hints(self.secret_word, prepared_hints, category_label)
             if ai_hints:
                 return ai_hints
-            self.set_status("ה-AI לא החזיר רמזים טובים, אז הסבב משתמש ברמזים המוכנים.")
+            self.ai_fallback_message = "ה-AI לא עובד כרגע, אז הסבב ממשיך עם הרמזים המוכנים."
 
         return prepared_hints
 
@@ -560,7 +561,9 @@ class AliasGameApp:
         self.round_finished = False
         self.guess_var.set("")
         self.guesses_list.delete(0, tk.END)
-        self.set_status("!הרמז הראשון מוכן. תנסה לנחש")
+        fallback_message = self.ai_fallback_message
+        self.ai_fallback_message = None
+        self.set_status(fallback_message or "!הרמז הראשון מוכן. תנסה לנחש")
         self.update_round_title()
         self.refresh_hints()
         self.refresh_metrics()
@@ -568,6 +571,8 @@ class AliasGameApp:
         self.next_button.configure(state="disabled")
         self.guess_entry.configure(state="normal")
         self.guess_entry.focus_set()
+        if fallback_message:
+            messagebox.showwarning("AI לא זמין", fallback_message)
 
     # מסיים את המשחק כאשר נגמרו המילים בקטגוריה.
     def finish_game(self):
