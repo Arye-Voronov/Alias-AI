@@ -176,6 +176,7 @@ class AliasGameApp:
         self.round_number = 0
         self.round_finished = False
         self.current_category = None
+        self.current_difficulty = "רגיל"
         self.randomizer = random.SystemRandom()
         self.category_options = []
         self.category_lookup = {}
@@ -195,6 +196,9 @@ class AliasGameApp:
         self.failed_words = 0
         self.skipped_words = 0
         self.total_hints_used = 0
+        self.success_streak = 0
+        self.struggle_streak = 0
+        self.dynamic_difficulty_message = ""
         self.last_summary = ""
         self.round_results = []
         self.settings = read_json_file(SETTINGS_FILE, {})
@@ -535,13 +539,14 @@ class AliasGameApp:
         # כרטיסי מדדים: ניקוד, כמות רמזים פתוחים וקטגוריה.
         metrics = ttk.Frame(outer, style="App.TFrame")
         metrics.grid(row=2, column=0, sticky="ew", pady=(0, 12))
-        for index in range(4):
+        for index in range(5):
             metrics.grid_columnconfigure(index, weight=1)
 
         self.score_value = self.build_metric(metrics, 0, "ניקוד", "0")
         self.hints_value = self.build_metric(metrics, 1, "רמזים פתוחים", f"0/{words.MAX_HINTS}")
         self.timer_value = self.build_metric(metrics, 2, "זמן", "--")
-        self.category_value = self.build_metric(metrics, 3, "קטגוריה", "עדיין לא נבחרה")
+        self.difficulty_value = self.build_metric(metrics, 3, "קושי דינמי", "רגיל")
+        self.category_value = self.build_metric(metrics, 4, "קטגוריה", "עדיין לא נבחרה")
 
         # אזור התוכן הראשי: רמזים בצד אחד וניחושים בצד השני.
         content = ttk.Frame(outer, style="App.TFrame")
@@ -829,7 +834,36 @@ class AliasGameApp:
 
     # מחזיר את הגדרות הקושי הנוכחיות, עם ברירת מחדל יציבה.
     def get_difficulty_settings(self):
-        return DIFFICULTY_SETTINGS.get(self.difficulty_var.get(), DIFFICULTY_SETTINGS["רגיל"])
+        return DIFFICULTY_SETTINGS.get(self.current_difficulty, DIFFICULTY_SETTINGS["רגיל"])
+
+    # משנה את הקושי בתוך המשחק לפי ביצועי השחקן.
+    def adjust_dynamic_difficulty(self, result):
+        old_difficulty = self.current_difficulty
+        levels = list(DIFFICULTY_SETTINGS)
+        current_index = levels.index(self.current_difficulty)
+        quick_success = result == "correct" and len(self.revealed_hints) <= 2 and self.attempts_used <= 1
+
+        if quick_success:
+            self.success_streak += 1
+            self.struggle_streak = 0
+        elif result in ("failed", "skipped", "revealed"):
+            self.struggle_streak += 1
+            self.success_streak = 0
+        else:
+            self.success_streak = 0
+            self.struggle_streak = 0
+
+        if self.success_streak >= 2 and current_index < len(levels) - 1:
+            self.current_difficulty = levels[current_index + 1]
+            self.success_streak = 0
+        elif self.struggle_streak >= 2 and current_index > 0:
+            self.current_difficulty = levels[current_index - 1]
+            self.struggle_streak = 0
+
+        if self.current_difficulty != old_difficulty:
+            self.dynamic_difficulty_message = f"הקושי הותאם אוטומטית ל: {self.current_difficulty}"
+        else:
+            self.dynamic_difficulty_message = ""
 
     # מחשב ניקוד לסבב לפי מספר הרמזים שנפתחו ורמת הקושי.
     def get_points_for_current_difficulty(self, hint_number):
@@ -879,6 +913,7 @@ class AliasGameApp:
             return
 
         self.current_category = self.category_lookup[selected_label]
+        self.current_difficulty = self.difficulty_var.get()
         self.save_current_settings()
         self.set_setup_controls_state("disabled")
         self.show_game_screen()
@@ -890,6 +925,9 @@ class AliasGameApp:
         self.failed_words = 0
         self.skipped_words = 0
         self.total_hints_used = 0
+        self.success_streak = 0
+        self.struggle_streak = 0
+        self.dynamic_difficulty_message = ""
         self.round_results = []
         self.last_summary = ""
         self.next_round()
@@ -917,7 +955,9 @@ class AliasGameApp:
         self.guess_var.set("")
         self.guesses_list.delete(0, tk.END)
         self.reveal_starting_hints()
-        self.set_status("!הרמז הראשון מוכן. תנסה לנחש")
+        status_text = self.dynamic_difficulty_message or "!הרמז הראשון מוכן. תנסה לנחש"
+        self.dynamic_difficulty_message = ""
+        self.set_status(status_text)
         self.update_round_title()
         self.refresh_hints()
         self.refresh_metrics()
@@ -973,7 +1013,8 @@ class AliasGameApp:
             f"המשחק הסתיים עם {self.score} נקודות.\n\n"
             f"שחקן: {self.player_name_var.get().strip() or 'שחקן'}\n"
             f"קטגוריה: {words.get_category_label(self.current_category) if self.current_category else ''}\n"
-            f"רמת קושי: {self.difficulty_var.get()}\n"
+            f"רמת קושי התחלתית: {self.difficulty_var.get()}\n"
+            f"רמת קושי בסיום: {self.current_difficulty}\n"
             f"טיימר: {'פעיל' if self.timer_enabled_var.get() else 'כבוי'}\n"
             f"מצב: {'אימון' if self.practice_mode_var.get() else 'ניקוד'}\n\n"
             f"מילים שנוחשו נכון: {self.correct_words}\n"
@@ -996,7 +1037,7 @@ class AliasGameApp:
                 "player": self.player_name_var.get().strip() or "שחקן",
                 "score": self.score,
                 "category": category_label,
-                "difficulty": self.difficulty_var.get(),
+                "difficulty": self.current_difficulty,
                 "rounds": played_rounds,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             })
@@ -1067,6 +1108,7 @@ class AliasGameApp:
             self.correct_words += 1
             self.total_hints_used += len(self.revealed_hints)
             self.round_results.append({"word": self.secret_word, "result": "correct", "hints": len(self.revealed_hints)})
+            self.adjust_dynamic_difficulty("correct")
             self.stop_timer()
             if self.practice_mode_var.get():
                 self.set_status(f"בול! מצב אימון לא נותן ניקוד. המילה הייתה: {self.secret_word}!")
@@ -1103,6 +1145,7 @@ class AliasGameApp:
         self.skipped_words += 1
         self.total_hints_used += len(self.revealed_hints)
         self.round_results.append({"word": word, "result": "skipped", "hints": len(self.revealed_hints)})
+        self.adjust_dynamic_difficulty("skipped")
         self.stop_timer()
         self.set_status(f"דילגת על המילה: {word}")
         self.play_feedback("warning")
@@ -1122,6 +1165,7 @@ class AliasGameApp:
         self.failed_words += 1
         self.total_hints_used += len(self.revealed_hints)
         self.round_results.append({"word": word, "result": "revealed", "hints": len(self.revealed_hints)})
+        self.adjust_dynamic_difficulty("revealed")
         self.stop_timer()
         self.set_status(f"התשובה היא: {word}")
         self.play_feedback("warning")
@@ -1141,6 +1185,7 @@ class AliasGameApp:
         self.failed_words += 1
         self.total_hints_used += len(self.revealed_hints)
         self.round_results.append({"word": word, "result": "failed", "hints": len(self.revealed_hints)})
+        self.adjust_dynamic_difficulty("failed")
         self.stop_timer()
         self.set_status(f"{reason}. המילה הייתה: {word}")
         self.play_feedback("error")
@@ -1256,6 +1301,7 @@ class AliasGameApp:
         else:
             timer_text = f"{self.time_left}s"
         self.timer_value.configure(text=timer_text)
+        self.difficulty_value.configure(text=self.current_difficulty)
         self.category_value.configure(text=category_text)
         self.progress.configure(maximum=self.get_difficulty_settings()["max_attempts"], value=self.attempts_used)
 
