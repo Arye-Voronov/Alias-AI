@@ -1,5 +1,6 @@
 import json
 import random
+import unicodedata
 from pathlib import Path
 
 
@@ -63,6 +64,9 @@ def get_hints(word, category):
 
 
 def normalize_guess(text):
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    for mark in "\"'׳״`.,!?;:()[]{}-_":
+        text = text.replace(mark, " ")
     return " ".join(text.strip().lower().split())
 
 

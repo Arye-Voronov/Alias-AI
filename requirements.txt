@@ -1,3 +1,1 @@
-arabic-reshaper
-python-bidi
-streamlit
+# Alias AI currently uses only the Python standard library at runtime.
