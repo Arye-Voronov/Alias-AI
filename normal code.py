@@ -16,6 +16,7 @@ import words
 # שם המודל המקומי ש-Ollama יריץ בשביל רמזי AI.
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT_SECONDS = 60
+SERVER_TIMEOUT_SECONDS = 10
 APP_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = APP_DIR / "settings.json"
 SCORES_FILE = APP_DIR / "scores.json"
@@ -199,10 +200,91 @@ def filter_duplicate_ai_hints(ai_hints, prepared_hints):
     return filtered[:words.MAX_HINTS] if len(filtered) == words.MAX_HINTS else None
 
 
+class OnlineGameError(Exception):
+    pass
+
+
+class OnlineGameService:
+    def __init__(self, server_url, room_id, player_name):
+        self.server_url = server_url.rstrip("/")
+        self.room_id = room_id.strip()
+        self.player_name = player_name.strip() or "שחקן"
+
+    def _request(self, method, path, payload=None):
+        url = self.server_url + path
+        data = None
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=SERVER_TIMEOUT_SECONDS) as response:
+                body = response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise OnlineGameError(f"השרת החזיר שגיאה {error.code}: {detail or error.reason}") from error
+        except (OSError, urllib.error.URLError) as error:
+            raise OnlineGameError(f"לא הצלחתי להתחבר לשרת: {error}") from error
+
+        if not body.strip():
+            return {}
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError as error:
+            raise OnlineGameError("השרת ענה, אבל לא החזיר JSON תקין.") from error
+
+    def health(self):
+        return self._request("GET", "/health")
+
+    def create_room(self, category, difficulty, max_rounds):
+        payload = {
+            "player": self.player_name,
+            "category": category,
+            "difficulty": difficulty,
+            "max_rounds": max_rounds,
+        }
+        data = self._request("POST", "/rooms", payload)
+        self.room_id = str(data.get("room_id") or data.get("room") or self.room_id)
+        return data.get("state", data)
+
+    def join_room(self):
+        if not self.room_id:
+            raise OnlineGameError("חסר קוד חדר.")
+        payload = {"player": self.player_name}
+        data = self._request("POST", f"/rooms/{self.room_id}/join", payload)
+        return data.get("state", data)
+
+    def start_game(self, category, difficulty, max_rounds):
+        if not self.room_id:
+            return self.create_room(category, difficulty, max_rounds)
+        return self.join_room()
+
+    def next_round(self):
+        data = self._request("POST", f"/rooms/{self.room_id}/next-round", {"player": self.player_name})
+        return data.get("state", data)
+
+    def submit_guess(self, guess):
+        payload = {"player": self.player_name, "guess": guess}
+        data = self._request("POST", f"/rooms/{self.room_id}/guess", payload)
+        return data.get("state", data)
+
+    def request_hint(self):
+        data = self._request("POST", f"/rooms/{self.room_id}/hint", {"player": self.player_name})
+        return data.get("state", data)
+
+    def skip_round(self):
+        data = self._request("POST", f"/rooms/{self.room_id}/skip", {"player": self.player_name})
+        return data.get("state", data)
+
+
 # AliasGameApp implements the full Alias guessing game UI and logic.
 class AliasGameApp:
+    window_count = 0
+
     # Initialize app state, UI styles, and starting state when constructed.
     def __init__(self, root):
+        AliasGameApp.window_count += 1
         self.colors = {
             "hero":         "#B80F2A",
             "hero_accent":  "#7A0A1B",
@@ -221,7 +303,7 @@ class AliasGameApp:
             "bg":           "#FBF7F8",
         }
         self.root = root
-        self.root.title("Alias AI")
+        self.root.title(f"Alias AI - חלון {AliasGameApp.window_count}")
         self.root.geometry("1060x760")
         self.root.minsize(900, 660)
         self.root.configure(bg=self.colors["bg"])
@@ -247,8 +329,14 @@ class AliasGameApp:
         self.difficulty_var = tk.StringVar(value="רגיל")
         self.game_length_var = tk.StringVar(value=GAME_LENGTH_OPTIONS[0])
         self.player_name_var = tk.StringVar(value="שחקן")
+        self.use_server_var = tk.BooleanVar(value=False)
+        self.server_url_var = tk.StringVar(value="")
+        self.room_id_var = tk.StringVar(value="")
         self.practice_mode_var = tk.BooleanVar(value=False)
         self.timer_enabled_var = tk.BooleanVar(value=True)
+        self.online_service = None
+        self.multiplayer_active = False
+        self.online_scoreboard = {}
         self.ai_request_id = 0
         self.adaptive_hint_request_id = 0
         self.timer_after_id = None
@@ -281,6 +369,8 @@ class AliasGameApp:
         self.build_layout()
         self.populate_categories()
         self.load_saved_settings()
+        self.refresh_multiplayer_status()
+        self.refresh_online_banner()
         self.render_intro_state()
 
     # Configure all ttk style themes and self.colors["bg" visual styles used by the app.
@@ -417,6 +507,16 @@ class AliasGameApp:
             pady=9,
         )
         self.hero_badge.grid(row=0, column=1, rowspan=2, sticky="w", padx=(0, 12))
+        self.online_banner = tk.Label(
+            header,
+            text="Solo",
+            bg="#ffffff",
+            fg=self.colors["hero_accent"],
+            font=("Helvetica", 10, "bold"),
+            padx=18,
+            pady=9,
+        )
+        self.online_banner.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
 
         # אזור בחירת קטגוריה, התחלת משחק ובחירת מקור הרמזים.
         controls_card = tk.Frame(self.home_screen, bg=self.colors["card"], bd=0, highlightthickness=2, highlightbackground="#FFE2E7", padx=26, pady=26)
@@ -475,8 +575,13 @@ class AliasGameApp:
             bd=1,
             bg=self.colors["entry"],
             fg=self.colors["text"],
+            insertbackground=self.colors["text"],
+            highlightthickness=2,
+            highlightbackground="#FFE2E7",
+            highlightcolor=self.colors["primary"],
         )
         self.player_entry.grid(row=2, column=2, sticky="ew", padx=(12, 0), pady=(14, 0))
+        self.enable_entry_edit_shortcuts(self.player_entry)
 
         self.game_length_combo = ttk.Combobox(
             controls_card,
@@ -555,6 +660,105 @@ class AliasGameApp:
         )
         self.ai_hints_radio.grid(row=0, column=0, sticky="e")
 
+        self.multiplayer_check = tk.Checkbutton(
+            controls_card,
+            text="Multiplayer דרך שרת",
+            variable=self.use_server_var,
+            command=self.on_multiplayer_toggle,
+            bg=self.colors["card"],
+            fg=self.colors["text"],
+            activebackground=self.colors["card"],
+            activeforeground=self.colors["primary"],
+            selectcolor=self.colors["card_inner"],
+            font=("Helvetica", 11, "bold"),
+            anchor="e",
+            justify="right",
+        )
+        self.multiplayer_check.grid(row=4, column=3, sticky="e", padx=(0, 10), pady=(14, 0))
+
+        ttk.Label(controls_card, text="כתובת שרת", style="CardTitle.TLabel").grid(
+            row=4, column=0, sticky="ne", padx=(12, 0), pady=(14, 0)
+        )
+
+        self.server_entry = tk.Entry(
+            controls_card,
+            textvariable=self.server_url_var,
+            justify="right",
+            font=("Arial", 12),
+            relief="solid",
+            bd=1,
+            bg=self.colors["entry"],
+            fg=self.colors["text"],
+            insertbackground=self.colors["text"],
+            highlightthickness=2,
+            highlightbackground="#FFE2E7",
+            highlightcolor=self.colors["primary"],
+        )
+        self.server_entry.grid(row=4, column=1, columnspan=2, sticky="ew", padx=(12, 0), pady=(14, 0))
+        self.enable_entry_edit_shortcuts(self.server_entry)
+
+        ttk.Label(controls_card, text="קוד חדר", style="CardTitle.TLabel").grid(
+            row=5, column=3, sticky="ne", padx=(0, 10), pady=(14, 0)
+        )
+        self.room_entry = tk.Entry(
+            controls_card,
+            textvariable=self.room_id_var,
+            justify="right",
+            font=("Arial", 12),
+            relief="solid",
+            bd=1,
+            bg=self.colors["entry"],
+            fg=self.colors["text"],
+            insertbackground=self.colors["text"],
+            highlightthickness=2,
+            highlightbackground="#FFE2E7",
+            highlightcolor=self.colors["primary"],
+        )
+        self.room_entry.grid(row=5, column=2, sticky="ew", padx=(12, 0), pady=(14, 0))
+        self.enable_entry_edit_shortcuts(self.room_entry)
+
+        self.new_room_button = ttk.Button(
+            controls_card,
+            text="חדר חדש",
+            style="Next.TButton",
+            command=self.clear_room_code,
+        )
+        self.new_room_button.grid(row=5, column=1, sticky="ew", padx=(12, 0), pady=(14, 0))
+
+        server_buttons_frame = tk.Frame(controls_card, bg=self.colors["card"])
+        server_buttons_frame.grid(row=5, column=0, sticky="ew", padx=(12, 0), pady=(14, 0))
+        server_buttons_frame.grid_columnconfigure(0, weight=1)
+        server_buttons_frame.grid_columnconfigure(1, weight=1)
+
+        self.server_paste_button = ttk.Button(
+            server_buttons_frame,
+            text="הדבק כתובת",
+            style="Next.TButton",
+            command=self.paste_server_url,
+        )
+        self.server_paste_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+        self.server_test_button = ttk.Button(
+            server_buttons_frame,
+            text="בדוק שרת",
+            style="Next.TButton",
+            command=self.test_server_connection,
+        )
+        self.server_test_button.grid(row=0, column=0, sticky="ew")
+
+        self.multiplayer_status_label = tk.Label(
+            controls_card,
+            text="Multiplayer כבוי",
+            bg="#FFF8E8",
+            fg=self.colors["warning"],
+            font=("Helvetica", 11, "bold"),
+            anchor="e",
+            justify="right",
+            padx=12,
+            pady=10,
+        )
+        self.multiplayer_status_label.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+
         self.categories_summary = tk.Label(
             controls_card,
             text="",
@@ -564,20 +768,23 @@ class AliasGameApp:
             anchor="e",
             justify="right",
         )
-        self.categories_summary.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        self.categories_summary.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(14, 0))
 
         tools_frame = tk.Frame(controls_card, bg=self.colors["card"])
-        tools_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(14, 0))
-        for index in range(3):
+        tools_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        for index in range(4):
             tools_frame.grid_columnconfigure(index, weight=1)
 
         ttk.Button(tools_frame, text="שיאים", style="Next.TButton", command=self.show_high_scores).grid(
-            row=0, column=2, sticky="ew", padx=(0, 8)
+            row=0, column=3, sticky="ew", padx=(0, 8)
         )
         ttk.Button(tools_frame, text="סטטיסטיקה", style="Next.TButton", command=self.show_category_stats).grid(
-            row=0, column=1, sticky="ew", padx=8
+            row=0, column=2, sticky="ew", padx=8
         )
         ttk.Button(tools_frame, text="ייצוא סיכום", style="Next.TButton", command=self.export_last_summary).grid(
+            row=0, column=1, sticky="ew", padx=8
+        )
+        ttk.Button(tools_frame, text="חלון נוסף", style="Next.TButton", command=self.open_additional_window).grid(
             row=0, column=0, sticky="ew", padx=(8, 0)
         )
 
@@ -642,11 +849,11 @@ class AliasGameApp:
         game_card.grid_columnconfigure(0, weight=1)
         game_card.grid_rowconfigure(4, weight=1)
 
-        self.round_title = ttk.Label(game_card, text="?מוכנים להתחיל", style="CardTitle.TLabel")
+        self.round_title = ttk.Label(game_card, text="מוכנים להתחיל?", style="CardTitle.TLabel")
         self.round_title.grid(row=0, column=0, sticky="e")
         self.status_box = tk.Label(
             game_card,
-            text="!בחר קטגוריה ולחץ על התחל משחק כדי לקבל את הרמז הראשון",
+            text="בחר קטגוריה ולחץ על התחל משחק כדי לקבל את הרמז הראשון!",
             bg="#f3f7ff",
             fg=self.colors["info"],
             font=("Helvetica", 13, "bold"),
@@ -719,6 +926,7 @@ class AliasGameApp:
             disabledforeground=self.colors["muted"],
         )
         self.guess_entry.grid(row=1, column=0, sticky="ew", pady=(10, 12))
+        self.enable_entry_edit_shortcuts(self.guess_entry)
         self.guess_entry.bind("<Return>", self.submit_guess)
 
         self.submit_button = ttk.Button(
@@ -778,6 +986,65 @@ class AliasGameApp:
         value_label.grid(row=1, column=0, sticky="ew", pady=(0, 10), padx=12)
         return value_label
 
+    def enable_entry_edit_shortcuts(self, entry):
+        menu = tk.Menu(entry, tearoff=0)
+        menu.add_command(label="גזור", command=lambda: entry.event_generate("<<Cut>>"))
+        menu.add_command(label="העתק", command=lambda: entry.event_generate("<<Copy>>"))
+        menu.add_command(label="הדבק", command=lambda: self.paste_into_entry(entry))
+        menu.add_separator()
+        menu.add_command(label="בחר הכל", command=lambda: self.select_entry_text(entry))
+
+        def show_menu(event):
+            entry.focus_set()
+            menu.tk_popup(event.x_root, event.y_root)
+
+        entry.bind("<Button-2>", show_menu, add="+")
+        entry.bind("<Button-3>", show_menu, add="+")
+        for sequence in ("<<Paste>>", "<Command-v>", "<Command-V>", "<Control-v>", "<Control-V>"):
+            entry.bind(sequence, lambda event: self.paste_into_entry(event.widget))
+        for sequence in ("<Command-a>", "<Command-A>", "<Control-a>", "<Control-A>"):
+            entry.bind(sequence, lambda event: self.select_entry_text(event.widget))
+
+    def paste_server_url(self):
+        self.use_server_var.set(True)
+        self.server_entry.configure(state="normal")
+        self.server_entry.focus_set()
+        result = self.paste_into_entry(self.server_entry)
+        if self.server_url_var.get().strip():
+            self.refresh_multiplayer_status()
+            self.set_status("כתובת השרת הודבקה. אפשר ללחוץ בדוק שרת.")
+        else:
+            messagebox.showwarning("הדבקת כתובת", "לא נמצאה כתובת בלוח ההעתקה.")
+        return result
+
+    def paste_into_entry(self, entry):
+        try:
+            text = self.root.clipboard_get()
+        except tk.TclError:
+            return "break"
+        if entry.cget("state") == "disabled":
+            return "break"
+        text = text.strip()
+        if not text:
+            return "break"
+        try:
+            selection_start = entry.index(tk.SEL_FIRST)
+            selection_end = entry.index(tk.SEL_LAST)
+            entry.delete(selection_start, selection_end)
+        except tk.TclError:
+            pass
+        entry.insert(tk.INSERT, text)
+        return "break"
+
+    def select_entry_text(self, entry):
+        entry.selection_range(0, tk.END)
+        entry.icursor(tk.END)
+        return "break"
+
+    def open_additional_window(self):
+        new_window = tk.Toplevel(self.root)
+        AliasGameApp(new_window)
+
     # Load categories from words.py and refresh category combobox values and summary.
     def populate_categories(self):
         current_label = self.category_var.get().strip()
@@ -806,6 +1073,9 @@ class AliasGameApp:
             self.game_length_var.set(settings["game_length"])
         if settings.get("player_name"):
             self.player_name_var.set(settings["player_name"])
+        self.use_server_var.set(False)
+        self.server_url_var.set("")
+        self.room_id_var.set("")
         self.practice_mode_var.set(bool(settings.get("practice_mode", False)))
         self.timer_enabled_var.set(bool(settings.get("timer_enabled", True)))
 
@@ -825,6 +1095,146 @@ class AliasGameApp:
     def get_selected_game_length(self):
         value = self.game_length_var.get()
         return None if value == GAME_LENGTH_OPTIONS[0] else int(value)
+
+    def build_online_service(self):
+        server_url = self.server_url_var.get().strip()
+        if not server_url:
+            raise OnlineGameError("צריך למלא כתובת שרת בשביל Multiplayer.")
+        if not server_url.startswith(("http://", "https://")):
+            server_url = "http://" + server_url
+            self.server_url_var.set(server_url)
+        return OnlineGameService(
+            server_url,
+            self.room_id_var.get().strip(),
+            self.player_name_var.get().strip() or "שחקן",
+        )
+
+    def on_multiplayer_toggle(self):
+        if self.use_server_var.get():
+            self.server_entry.focus_set()
+        else:
+            self.category_combo.focus_set()
+        self.refresh_multiplayer_status()
+        self.refresh_online_banner()
+
+    def clear_room_code(self):
+        self.room_id_var.set("")
+        self.room_entry.focus_set()
+        self.refresh_multiplayer_status()
+        self.set_status("קוד החדר נוקה. בהתחלת משחק Multiplayer השרת ייצור חדר חדש.")
+
+    def test_server_connection(self):
+        try:
+            service = self.build_online_service()
+            data = service.health()
+        except OnlineGameError as error:
+            messagebox.showerror("בדיקת שרת", str(error))
+            return
+        status = data.get("status") or data.get("message") or "ok"
+        room_note = "אם קוד החדר ריק, התחלת משחק תיצור חדר חדש."
+        self.refresh_multiplayer_status("מחובר לשרת. " + room_note)
+        messagebox.showinfo("בדיקת שרת", f"השרת ענה בהצלחה: {status}\n{room_note}")
+
+    def get_online_scoreboard_text(self):
+        if not self.online_scoreboard:
+            return ""
+        ordered = sorted(self.online_scoreboard.items(), key=lambda item: item[1], reverse=True)
+        return " | ".join(f"{name}: {score}" for name, score in ordered)
+
+    def refresh_multiplayer_status(self, text=None):
+        if not hasattr(self, "multiplayer_status_label"):
+            return
+        if not self.use_server_var.get():
+            text = text or "Multiplayer כבוי"
+            bg = "#FFF8E8"
+            fg = self.colors["warning"]
+        else:
+            room_id = self.room_id_var.get().strip()
+            server_url = self.server_url_var.get().strip() or "לא הוגדרה כתובת"
+            room_text = f"חדר {room_id}" if room_id else "חדר חדש ייווצר בתחילת המשחק"
+            text = text or f"Multiplayer פעיל | {room_text} | {server_url}"
+            bg = "#E8F8EF"
+            fg = self.colors["success"]
+        self.multiplayer_status_label.configure(text=text, bg=bg, fg=fg)
+
+    def refresh_online_banner(self):
+        if not hasattr(self, "online_banner"):
+            return
+        if self.multiplayer_active or self.use_server_var.get():
+            room_id = self.room_id_var.get().strip() or "חדש"
+            scoreboard_text = self.get_online_scoreboard_text()
+            parts = [f"Multiplayer", f"חדר {room_id}"]
+            if scoreboard_text:
+                parts.append(scoreboard_text)
+            self.online_banner.configure(text=" | ".join(parts), bg="#E8F8EF", fg=self.colors["success"])
+        else:
+            self.online_banner.configure(text="Solo", bg="#ffffff", fg=self.colors["hero_accent"])
+
+    def apply_online_state(self, state, fallback_message=""):
+        self.multiplayer_active = True
+        if state.get("room_id"):
+            self.room_id_var.set(str(state["room_id"]))
+            if self.online_service:
+                self.online_service.room_id = str(state["room_id"])
+        self.current_category = state.get("category") or self.current_category
+        self.current_difficulty = state.get("difficulty") or self.current_difficulty
+        self.round_number = int(state.get("round_number", self.round_number or 1))
+        self.online_scoreboard = state.get("scoreboard", {}) or {}
+        player_name = self.player_name_var.get().strip() or "שחקן"
+        self.score = int(self.online_scoreboard.get(player_name, self.score))
+        self.revealed_hints = list(state.get("revealed_hints", []))
+        self.all_hints = list(self.revealed_hints)
+        self.attempts_used = int(state.get("attempts_used", len(state.get("guesses", []))))
+        self.time_left = int(state.get("time_left", 0) or 0)
+        self.round_finished = not bool(state.get("round_active", False))
+        self.secret_word = "__server_round__" if state.get("round_active", False) else None
+        self.guess_var.set("")
+        self.guesses_list.delete(0, tk.END)
+        for guess_line in state.get("guesses", [])[:20]:
+            self.guesses_list.insert(tk.END, str(guess_line))
+        scoreboard_text = self.get_online_scoreboard_text()
+        if scoreboard_text:
+            self.guesses_list.insert(0, "ניקוד: " + scoreboard_text)
+
+        self.update_round_title()
+        self.refresh_hints()
+        self.refresh_metrics()
+        self.refresh_multiplayer_status()
+        self.refresh_online_banner()
+        message = state.get("message") or fallback_message or "מצב Multiplayer עודכן מהשרת."
+        if state.get("room_id"):
+            message = f"חדר {state['room_id']} | {message}"
+        if scoreboard_text:
+            message = f"{message}\n{scoreboard_text}"
+        self.set_status(message)
+
+        if state.get("game_over"):
+            self.finish_online_game(state)
+            return
+
+        self.submit_button.configure(state="normal" if self.secret_word else "disabled")
+        self.guess_entry.configure(state="normal" if self.secret_word else "disabled")
+        self.next_button.configure(state="normal" if self.round_finished else "disabled")
+        self.skip_button.configure(state="normal" if self.secret_word else "disabled")
+        self.reveal_button.configure(state="disabled")
+        self.extra_hint_button.configure(text="פתח רמז")
+        self.extra_hint_button.configure(state="normal" if self.secret_word else "disabled")
+        if self.secret_word:
+            self.guess_entry.focus_set()
+
+    def finish_online_game(self, state):
+        self.stop_timer()
+        self.secret_word = None
+        self.round_finished = True
+        self.submit_button.configure(state="disabled")
+        self.next_button.configure(state="disabled")
+        self.skip_button.configure(state="disabled")
+        self.reveal_button.configure(state="disabled")
+        self.extra_hint_button.configure(text="רמז AI נוסף")
+        self.extra_hint_button.configure(state="disabled")
+        self.guess_entry.configure(state="disabled")
+        self.set_setup_controls_state("normal")
+        self.set_status(state.get("message", "משחק ה-Multiplayer הסתיים."))
 
     # מציג את מסך הבית ומסתיר את מסך המשחק.
     def show_home_screen(self):
@@ -846,6 +1256,10 @@ class AliasGameApp:
         self.stop_loading_status()
         self.ai_request_id += 1
         self.adaptive_hint_request_id += 1
+        self.multiplayer_active = False
+        self.online_service = None
+        self.online_scoreboard = {}
+        self.refresh_online_banner()
         self.secret_word = None
         self.all_hints = []
         self.revealed_hints = []
@@ -857,6 +1271,7 @@ class AliasGameApp:
         self.next_button.configure(state="disabled")
         self.skip_button.configure(state="disabled")
         self.reveal_button.configure(state="disabled")
+        self.extra_hint_button.configure(text="רמז AI נוסף")
         self.extra_hint_button.configure(state="disabled")
         self.guess_entry.configure(state="disabled")
         self.set_setup_controls_state("normal")
@@ -1016,7 +1431,7 @@ class AliasGameApp:
         revealed_hints = list(self.revealed_hints)
         wrong_guesses = list(self.wrong_guesses)
         category_label = words.get_category_label(self.current_category)
-        fallback_status = self.pending_adaptive_status or ".לא נכון. נפתח רמז נוסף, קצת יותר קל"
+        fallback_status = self.pending_adaptive_status or "לא נכון. נפתח רמז נוסף, קצת יותר קל."
         self.pending_adaptive_status = ""
 
         self.set_round_controls_state("disabled")
@@ -1047,6 +1462,15 @@ class AliasGameApp:
         self.extra_hint_button.configure(state="disabled" if self.used_extra_hint else "normal")
 
     def request_extra_ai_hint(self):
+        if self.multiplayer_active and self.online_service:
+            try:
+                state = self.online_service.request_hint()
+            except OnlineGameError as error:
+                self.set_status(str(error))
+                return
+            self.apply_online_state(state, "השרת פתח רמז נוסף.")
+            return
+
         if self.round_finished or not self.secret_word:
             return
         if self.hint_source_var.get() != "ai":
@@ -1077,8 +1501,19 @@ class AliasGameApp:
         self.current_category = self.category_lookup[selected_label]
         self.current_difficulty = self.difficulty_var.get()
         self.save_current_settings()
+
+        if self.use_server_var.get():
+            self.start_online_game()
+            return
+
+        self.multiplayer_active = False
+        self.online_service = None
+        self.online_scoreboard = {}
+        self.refresh_online_banner()
         self.set_setup_controls_state("disabled")
         self.show_game_screen()
+        self.refresh_multiplayer_status()
+        self.refresh_online_banner()
         self.score = 0
         self.round_number = 0
         self.max_rounds = self.get_selected_game_length()
@@ -1098,8 +1533,42 @@ class AliasGameApp:
         self.last_summary = ""
         self.next_round()
 
+    def start_online_game(self):
+        try:
+            self.online_service = self.build_online_service()
+            state = self.online_service.start_game(
+                self.current_category,
+                self.current_difficulty,
+                self.get_selected_game_length(),
+            )
+        except OnlineGameError as error:
+            messagebox.showerror("Multiplayer", str(error))
+            return
+
+        self.set_setup_controls_state("disabled")
+        self.show_game_screen()
+        self.score = 0
+        self.round_number = 0
+        self.max_rounds = self.get_selected_game_length()
+        self.correct_words = 0
+        self.failed_words = 0
+        self.skipped_words = 0
+        self.total_hints_used = 0
+        self.round_results = []
+        self.last_summary = ""
+        self.apply_online_state(state, "התחברת לשרת והמשחק התחיל.")
+
     # Proceed to the next round, choose the next word, and show the first hint.
     def next_round(self):
+        if self.multiplayer_active and self.online_service:
+            try:
+                state = self.online_service.next_round()
+            except OnlineGameError as error:
+                self.set_status(str(error))
+                return
+            self.apply_online_state(state, "השרת עבר למילה הבאה.")
+            return
+
         self.stop_timer()
         self.ai_request_id += 1
         self.adaptive_hint_request_id += 1
@@ -1125,7 +1594,7 @@ class AliasGameApp:
         self.guess_var.set("")
         self.guesses_list.delete(0, tk.END)
         self.reveal_starting_hints()
-        status_text = self.dynamic_difficulty_message or "!הרמז הראשון מוכן. תנסה לנחש"
+        status_text = self.dynamic_difficulty_message or "הרמז הראשון מוכן. תנסה לנחש!"
         self.dynamic_difficulty_message = ""
         self.set_status(status_text)
         self.update_round_title()
@@ -1380,12 +1849,16 @@ class AliasGameApp:
 
     # Handle guess submission: validate, score, reveal hints, end round if needed.
     def submit_guess(self, event=None):
+        if self.multiplayer_active and self.online_service:
+            self.submit_online_guess()
+            return
+
         if self.round_finished or not self.secret_word:
             return
 
         guess = self.guess_var.get().strip()
         if not guess:
-            self.set_status("!צריך לכתוב ניחוש לפני שבודקים")
+            self.set_status("צריך לכתוב ניחוש לפני שבודקים!")
             return
 
         normalized_guess = words.normalize_guess(guess)
@@ -1442,10 +1915,33 @@ class AliasGameApp:
             self.start_adaptive_hint_generation(next_hint_index)
             return
 
-        self.reveal_hint_after_wrong_guess(next_hint_index, ".לא נכון. נפתח רמז נוסף, קצת יותר קל")
+        self.reveal_hint_after_wrong_guess(next_hint_index, "לא נכון. נפתח רמז נוסף, קצת יותר קל.")
+
+    def submit_online_guess(self):
+        if self.round_finished or not self.secret_word:
+            return
+        guess = self.guess_var.get().strip()
+        if not guess:
+            self.set_status("צריך לכתוב ניחוש לפני שבודקים!")
+            return
+        try:
+            state = self.online_service.submit_guess(guess)
+        except OnlineGameError as error:
+            self.set_status(str(error))
+            return
+        self.apply_online_state(state, "הניחוש נשלח לשרת.")
 
     # מדלג על הסבב הנוכחי וממשיך למילה הבאה בלי לתת ניקוד.
     def skip_round(self):
+        if self.multiplayer_active and self.online_service:
+            try:
+                state = self.online_service.skip_round()
+            except OnlineGameError as error:
+                self.set_status(str(error))
+                return
+            self.apply_online_state(state, "השרת דילג על הסבב.")
+            return
+
         if self.round_finished or not self.secret_word:
             return
         word = self.secret_word
@@ -1468,6 +1964,10 @@ class AliasGameApp:
 
     # מגלה את התשובה ומסיים את הסבב בלי ניקוד.
     def reveal_answer(self):
+        if self.multiplayer_active:
+            self.set_status("ב-Multiplayer התשובה נשארת רק בשרת, כדי שלא יהיה אפשר לראות אותה מהמחשב של השחקן.")
+            return
+
         if self.round_finished or not self.secret_word:
             return
         word = self.secret_word
@@ -1531,6 +2031,12 @@ class AliasGameApp:
         self.player_entry.configure(state=state)
         self.prepared_hints_radio.configure(state=state)
         self.ai_hints_radio.configure(state=state)
+        self.multiplayer_check.configure(state=state)
+        self.server_entry.configure(state=state)
+        self.room_entry.configure(state=state)
+        self.new_room_button.configure(state=state)
+        self.server_paste_button.configure(state=state)
+        self.server_test_button.configure(state=state)
         self.practice_check.configure(state=state)
         self.timer_check.configure(state=state)
         self.start_button.configure(state=state)
