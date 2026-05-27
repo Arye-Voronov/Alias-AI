@@ -16,7 +16,7 @@ import words
 # שם המודל המקומי ש-Ollama יריץ בשביל רמזי AI.
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT_SECONDS = 60
-SERVER_TIMEOUT_SECONDS = 10
+SERVER_TIMEOUT_SECONDS = 130
 APP_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = APP_DIR / "settings.json"
 SCORES_FILE = APP_DIR / "scores.json"
@@ -205,10 +205,11 @@ class OnlineGameError(Exception):
 
 
 class OnlineGameService:
-    def __init__(self, server_url, room_id, player_name):
+    def __init__(self, server_url, room_id, player_name, hint_source="prepared"):
         self.server_url = server_url.rstrip("/")
         self.room_id = room_id.strip()
         self.player_name = player_name.strip() or "שחקן"
+        self.hint_source = hint_source if hint_source in ("prepared", "ai") else "prepared"
 
     def _request(self, method, path, payload=None):
         url = self.server_url + path
@@ -237,12 +238,21 @@ class OnlineGameService:
     def health(self):
         return self._request("GET", "/health")
 
-    def create_room(self, category, difficulty, max_rounds):
+    def scores(self):
+        return self._request("GET", "/scores").get("scores", [])
+
+    def stats(self):
+        return self._request("GET", "/stats").get("stats", {})
+
+    def create_room(self, category, difficulty, max_rounds, timer_enabled=True, time_limit=0):
         payload = {
             "player": self.player_name,
             "category": category,
             "difficulty": difficulty,
             "max_rounds": max_rounds,
+            "hint_source": self.hint_source,
+            "timer_enabled": timer_enabled,
+            "time_limit": time_limit,
         }
         data = self._request("POST", "/rooms", payload)
         self.room_id = str(data.get("room_id") or data.get("room") or self.room_id)
@@ -255,10 +265,15 @@ class OnlineGameService:
         data = self._request("POST", f"/rooms/{self.room_id}/join", payload)
         return data.get("state", data)
 
-    def start_game(self, category, difficulty, max_rounds):
+    def start_game(self, category, difficulty, max_rounds, timer_enabled=True, time_limit=0):
         if not self.room_id:
-            return self.create_room(category, difficulty, max_rounds)
+            return self.create_room(category, difficulty, max_rounds, timer_enabled, time_limit)
         return self.join_room()
+
+    def state(self):
+        if not self.room_id:
+            raise OnlineGameError("חסר קוד חדר.")
+        return self._request("GET", f"/rooms/{self.room_id}/state")
 
     def next_round(self):
         data = self._request("POST", f"/rooms/{self.room_id}/next-round", {"player": self.player_name})
@@ -1107,6 +1122,7 @@ class AliasGameApp:
             server_url,
             self.room_id_var.get().strip(),
             self.player_name_var.get().strip() or "שחקן",
+            self.hint_source_var.get(),
         )
 
     def on_multiplayer_toggle(self):
@@ -1119,7 +1135,10 @@ class AliasGameApp:
 
     def clear_room_code(self):
         self.room_id_var.set("")
+        self.online_service = None
+        self.multiplayer_active = False
         self.room_entry.focus_set()
+        self.set_setup_controls_state("normal")
         self.refresh_multiplayer_status()
         self.set_status("קוד החדר נוקה. בהתחלת משחק Multiplayer השרת ייצור חדר חדש.")
 
@@ -1170,25 +1189,31 @@ class AliasGameApp:
         else:
             self.online_banner.configure(text="Solo", bg="#ffffff", fg=self.colors["hero_accent"])
 
-    def apply_online_state(self, state, fallback_message=""):
+    def apply_online_state(self, state, fallback_message="", quiet=False):
         self.multiplayer_active = True
+        previous_round_number = self.round_number
         if state.get("room_id"):
             self.room_id_var.set(str(state["room_id"]))
             if self.online_service:
                 self.online_service.room_id = str(state["room_id"])
         self.current_category = state.get("category") or self.current_category
         self.current_difficulty = state.get("difficulty") or self.current_difficulty
+        if state.get("hint_source") in ("prepared", "ai"):
+            self.hint_source_var.set(state["hint_source"])
         self.round_number = int(state.get("round_number", self.round_number or 1))
         self.online_scoreboard = state.get("scoreboard", {}) or {}
+        self.online_players = state.get("players", [])
         player_name = self.player_name_var.get().strip() or "שחקן"
         self.score = int(self.online_scoreboard.get(player_name, self.score))
         self.revealed_hints = list(state.get("revealed_hints", []))
         self.all_hints = list(self.revealed_hints)
         self.attempts_used = int(state.get("attempts_used", len(state.get("guesses", []))))
+        self.timer_enabled_var.set(bool(state.get("timer_enabled", self.timer_enabled_var.get())))
         self.time_left = int(state.get("time_left", 0) or 0)
         self.round_finished = not bool(state.get("round_active", False))
         self.secret_word = "__server_round__" if state.get("round_active", False) else None
-        self.guess_var.set("")
+        if not quiet or self.round_number != previous_round_number or not self.secret_word:
+            self.guess_var.set("")
         self.guesses_list.delete(0, tk.END)
         for guess_line in state.get("guesses", [])[:20]:
             self.guesses_list.insert(tk.END, str(guess_line))
@@ -1201,17 +1226,29 @@ class AliasGameApp:
         self.refresh_metrics()
         self.refresh_multiplayer_status()
         self.refresh_online_banner()
-        message = state.get("message") or fallback_message or "מצב Multiplayer עודכן מהשרת."
-        if state.get("room_id"):
-            message = f"חדר {state['room_id']} | {message}"
-        if scoreboard_text:
-            message = f"{message}\n{scoreboard_text}"
-        self.set_status(message)
+        if not quiet:
+            message = state.get("message") or fallback_message or "מצב Multiplayer עודכן מהשרת."
+            if state.get("waiting_for_players"):
+                min_players = state.get("min_players_to_start", 2)
+                message = (
+                    f"מחכים לשחקן נוסף. קוד חדר: {state.get('room_id', '')}. "
+                    f"שחקנים בחדר: {state.get('player_count', 1)}/{min_players}"
+                )
+            if state.get("hint_source_used") == "ai":
+                message = f"{message} | רמזי AI מהשרת"
+            elif state.get("hint_source_used") == "prepared_fallback":
+                message = f"{message} | ה-AI לא זמין, משתמשים ברמזים מוכנים"
+            if state.get("room_id"):
+                message = f"חדר {state['room_id']} | {message}"
+            if scoreboard_text:
+                message = f"{message}\n{scoreboard_text}"
+            self.set_status(message)
 
         if state.get("game_over"):
             self.finish_online_game(state)
             return
 
+        waiting_for_players = bool(state.get("waiting_for_players", False))
         self.submit_button.configure(state="normal" if self.secret_word else "disabled")
         self.guess_entry.configure(state="normal" if self.secret_word else "disabled")
         self.next_button.configure(state="normal" if self.round_finished else "disabled")
@@ -1220,10 +1257,24 @@ class AliasGameApp:
         self.extra_hint_button.configure(text="פתח רמז")
         self.extra_hint_button.configure(state="normal" if self.secret_word else "disabled")
         if self.secret_word:
-            self.guess_entry.focus_set()
+            self.start_online_timer()
+            if not quiet:
+                self.guess_entry.focus_set()
+        elif waiting_for_players:
+            min_players = state.get("min_players_to_start", 2)
+            if not quiet:
+                self.set_status(
+                    f"מחכים לשחקן נוסף. קוד חדר: {state.get('room_id', '')}. "
+                    f"שחקנים בחדר: {state.get('player_count', 1)}/{min_players}"
+                )
+            self.start_online_lobby_poll()
+        else:
+            self.start_online_lobby_poll()
 
     def finish_online_game(self, state):
         self.stop_timer()
+        self.multiplayer_active = False
+        self.online_service = None
         self.secret_word = None
         self.round_finished = True
         self.submit_button.configure(state="disabled")
@@ -1237,7 +1288,12 @@ class AliasGameApp:
         self.set_status(state.get("message", "משחק ה-Multiplayer הסתיים."))
 
     # מציג את מסך הבית ומסתיר את מסך המשחק.
-    def show_home_screen(self):
+    def show_home_screen(self, force=False):
+        if not force and self.multiplayer_active and self.secret_word:
+            self.show_game_screen()
+            return
+        if not self.multiplayer_active and not self.secret_word:
+            self.set_setup_controls_state("normal")
         self.home_screen.tkraise()
         self.root.title("Alias AI - בית")
 
@@ -1277,11 +1333,18 @@ class AliasGameApp:
         self.set_setup_controls_state("normal")
         self.refresh_metrics()
         self.refresh_hints()
-        self.show_home_screen()
+        self.show_home_screen(force=True)
 
     # מציג את השיאים האחרונים והשיאים הגבוהים ביותר.
     def show_high_scores(self):
-        scores = read_json_file(SCORES_FILE, [])
+        if self.use_server_var.get() and self.server_url_var.get().strip():
+            try:
+                scores = self.build_online_service().scores()
+            except OnlineGameError as error:
+                messagebox.showerror("שיאים", str(error))
+                return
+        else:
+            scores = read_json_file(SCORES_FILE, [])
         if not scores:
             messagebox.showinfo("שיאים", "עדיין אין שיאים שמורים.")
             return
@@ -1296,7 +1359,14 @@ class AliasGameApp:
 
     # מציג סטטיסטיקה מצטברת לפי קטגוריה.
     def show_category_stats(self):
-        stats = read_json_file(STATS_FILE, {})
+        if self.use_server_var.get() and self.server_url_var.get().strip():
+            try:
+                stats = self.build_online_service().stats()
+            except OnlineGameError as error:
+                messagebox.showerror("סטטיסטיקה", str(error))
+                return
+        else:
+            stats = read_json_file(STATS_FILE, {})
         if not stats:
             messagebox.showinfo("סטטיסטיקה", "עדיין אין סטטיסטיקה שמורה.")
             return
@@ -1540,8 +1610,14 @@ class AliasGameApp:
                 self.current_category,
                 self.current_difficulty,
                 self.get_selected_game_length(),
+                self.timer_enabled_var.get(),
+                self.get_difficulty_settings()["seconds"],
             )
         except OnlineGameError as error:
+            self.multiplayer_active = False
+            self.online_service = None
+            self.set_setup_controls_state("normal")
+            self.show_home_screen(force=True)
             messagebox.showerror("Multiplayer", str(error))
             return
 
@@ -1557,6 +1633,10 @@ class AliasGameApp:
         self.round_results = []
         self.last_summary = ""
         self.apply_online_state(state, "התחברת לשרת והמשחק התחיל.")
+        if not state.get("game_over"):
+            self.show_game_screen()
+            self.root.after(80, self.show_game_screen)
+            self.root.after(250, self.show_game_screen)
 
     # Proceed to the next round, choose the next word, and show the first hint.
     def next_round(self):
@@ -1635,7 +1715,36 @@ class AliasGameApp:
         self.save_game_records()
         self.set_status(f"סיימת את הקטגוריה עם {self.score} נקודות.")
         self.show_game_over_window(summary)
-        self.show_home_screen()
+
+    def start_online_timer(self):
+        self.stop_timer()
+        if not self.multiplayer_active or not self.online_service or not self.secret_word:
+            return
+        self.timer_after_id = self.root.after(1000, self.poll_online_state)
+
+    def start_online_lobby_poll(self):
+        self.stop_timer()
+        if not self.multiplayer_active or not self.online_service:
+            return
+        self.timer_after_id = self.root.after(1000, self.poll_online_state)
+
+    def poll_online_state(self):
+        if not self.multiplayer_active or not self.online_service:
+            self.timer_after_id = None
+            return
+        try:
+            state = self.online_service.state()
+        except OnlineGameError as error:
+            self.timer_after_id = None
+            self.set_status(str(error))
+            return
+        self.timer_after_id = None
+        if state.get("round_active", False):
+            self.apply_online_state(state, quiet=True)
+        elif state.get("waiting_for_players", False):
+            self.apply_online_state(state, quiet=True)
+        else:
+            self.apply_online_state(state, "הסבב הסתיים בשרת.")
 
     def get_practice_insight(self, played_rounds, average_hints):
         if not played_rounds:
