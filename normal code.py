@@ -28,6 +28,15 @@ DIFFICULTY_SETTINGS = {
     "קשה": {"seconds": 45, "start_hints": 1, "max_attempts": 4, "score_bonus": 2},
 }
 GAME_LENGTH_OPTIONS = ["כל הקטגוריה", "5", "10", "15", "20"]
+RTL_START = "\u202B"
+RTL_END = "\u202C"
+
+
+def rtl_text(text):
+    text = str(text)
+    if not any("\u0590" <= char <= "\u05FF" for char in text):
+        return text
+    return "\n".join(f"{RTL_START}{line}{RTL_END}" if line else line for line in text.splitlines())
 
 
 # מנקה תשובת AI מכותרות וממרכאות כדי להציג רק את הרמז עצמו.
@@ -1174,7 +1183,7 @@ class AliasGameApp:
             text = text or f"Multiplayer פעיל | {room_text} | {server_url}"
             bg = "#E8F8EF"
             fg = self.colors["success"]
-        self.multiplayer_status_label.configure(text=text, bg=bg, fg=fg)
+        self.multiplayer_status_label.configure(text=rtl_text(text), bg=bg, fg=fg)
 
     def refresh_online_banner(self):
         if not hasattr(self, "online_banner"):
@@ -1185,7 +1194,7 @@ class AliasGameApp:
             parts = [f"Multiplayer", f"חדר {room_id}"]
             if scoreboard_text:
                 parts.append(scoreboard_text)
-            self.online_banner.configure(text=" | ".join(parts), bg="#E8F8EF", fg=self.colors["success"])
+            self.online_banner.configure(text=rtl_text(" | ".join(parts)), bg="#E8F8EF", fg=self.colors["success"])
         else:
             self.online_banner.configure(text="Solo", bg="#ffffff", fg=self.colors["hero_accent"])
 
@@ -1216,10 +1225,10 @@ class AliasGameApp:
             self.guess_var.set("")
         self.guesses_list.delete(0, tk.END)
         for guess_line in state.get("guesses", [])[:20]:
-            self.guesses_list.insert(tk.END, str(guess_line))
+            self.guesses_list.insert(tk.END, rtl_text(guess_line))
         scoreboard_text = self.get_online_scoreboard_text()
         if scoreboard_text:
-            self.guesses_list.insert(0, "ניקוד: " + scoreboard_text)
+            self.guesses_list.insert(0, rtl_text("ניקוד: " + scoreboard_text))
 
         self.update_round_title()
         self.refresh_hints()
@@ -1709,7 +1718,7 @@ class AliasGameApp:
         self.set_setup_controls_state("normal")
         self.refresh_hints()
         self.refresh_metrics()
-        self.round_title.configure(text="המשחק הסתיים")
+        self.round_title.configure(text=rtl_text("המשחק הסתיים"))
         summary = self.build_game_summary()
         self.last_summary = summary
         self.save_game_records()
@@ -1973,7 +1982,7 @@ class AliasGameApp:
         normalized_guess = words.normalize_guess(guess)
         normalized_word = words.normalize_guess(self.secret_word)
         if normalized_guess != normalized_word and self.is_close_guess(guess):
-            self.guesses_list.insert(0, f"{guess} - קרוב")
+            self.guesses_list.insert(0, rtl_text(f"{guess} - קרוב"))
             self.guess_var.set("")
             category_label = words.get_category_label(self.current_category)
             self.set_status(f"קרוב מאוד! אתה בכיוון של {category_label}, נסה לדייק בלי לפתוח רמז נוסף.")
@@ -1982,7 +1991,7 @@ class AliasGameApp:
             return
 
         self.attempts_used += 1
-        self.guesses_list.insert(0, guess)
+        self.guesses_list.insert(0, rtl_text(guess))
 
         if normalized_guess == normalized_word:
             points = self.get_points_for_current_difficulty(len(self.revealed_hints))
@@ -2180,7 +2189,7 @@ class AliasGameApp:
     # מעדכן את כותרת הסבב לפי מספר הסבב והקטגוריה.
     def update_round_title(self):
         category_label = words.get_category_label(self.current_category) if self.current_category else "ללא קטגוריה"
-        self.round_title.configure(text=f"סבב {self.round_number} | {category_label}")
+        self.round_title.configure(text=rtl_text(f"סבב {self.round_number} | {category_label}"))
 
     def hex_to_rgb(self, color):
         color = color.lstrip("#")
@@ -2200,9 +2209,9 @@ class AliasGameApp:
             if self.status_animation_after_id:
                 self.root.after_cancel(self.status_animation_after_id)
             start_bg = self.status_box.cget("bg")
-            self.status_box.configure(text=text, fg=fg)
+            self.status_box.configure(text=rtl_text(text), fg=fg)
         if step >= steps:
-            self.status_box.configure(text=text, bg=bg, fg=fg)
+            self.status_box.configure(text=rtl_text(text), bg=bg, fg=fg)
             self.status_animation_after_id = None
             return
         next_bg = self.blend_colors(start_bg, bg, (step + 1) / steps)
