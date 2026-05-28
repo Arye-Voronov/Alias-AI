@@ -10,6 +10,12 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
+
+try:
+    import customtkinter as ctk
+except ImportError:
+    ctk = None
+
 import words
 
 
@@ -309,28 +315,14 @@ class AliasGameApp:
     # Initialize app state, UI styles, and starting state when constructed.
     def __init__(self, root):
         AliasGameApp.window_count += 1
-        self.colors = {
-            "hero":         "#B80F2A",
-            "hero_accent":  "#7A0A1B",
-            "card":         "#FFFFFF",
-            "card_alt":     "#FFF5F6",
-            "card_inner":   "#FFF3F5",
-            "entry":        "#FFFFFF",
-            "list":         "#FFFFFF",
-            "primary":      "#B80F2A",
-            "text":         "#1A1A1A",
-            "muted":        "#747474",
-            "info":         "#8F1230",
-            "success":      "#1A7A4A",
-            "warning":      "#B45309",
-            "error":        "#8F1230",
-            "bg":           "#FBF7F8",
-        }
+        self.theme_mode = "light"
+        self.active_screen = "home"
+        self.colors = self.get_theme_colors()
         self.root = root
         self.root.title(f"Alias AI - חלון {AliasGameApp.window_count}")
         self.root.geometry("1060x760")
         self.root.minsize(900, 660)
-        self.root.configure(bg=self.colors["bg"])
+        self.configure_window_background(self.root)
 
         # מצב המשחק: ניקוד, מילה נוכחית, רמזים, ניסיונות וקטגוריה.
         self.score = 0
@@ -397,6 +389,289 @@ class AliasGameApp:
         self.refresh_online_banner()
         self.render_intro_state()
 
+    def configure_window_background(self, window):
+        if ctk and isinstance(window, (ctk.CTk, ctk.CTkToplevel)):
+            window.configure(fg_color=self.colors["bg"])
+        else:
+            window.configure(bg=self.colors["bg"])
+
+    def get_theme_colors(self):
+        if self.theme_mode == "dark":
+            return {
+                "hero": "#940F24",
+                "hero_accent": "#5E0715",
+                "card": "#151515",
+                "card_alt": "#201013",
+                "card_inner": "#1F1719",
+                "entry": "#0B0B0D",
+                "list": "#0B0B0D",
+                "primary": "#FF405C",
+                "text": "#F8F4F5",
+                "muted": "#BBAEB2",
+                "info": "#FF7890",
+                "success": "#68D391",
+                "warning": "#F6C453",
+                "error": "#FF6B82",
+                "bg": "#08080A",
+                "border": "#6B1828",
+                "soft": "#2A1117",
+            }
+        return {
+            "hero": "#B80F2A",
+            "hero_accent": "#7A0A1B",
+            "card": "#FFFFFF",
+            "card_alt": "#FFF5F6",
+            "card_inner": "#FFF3F5",
+            "entry": "#FFFFFF",
+            "list": "#FFFFFF",
+            "primary": "#B80F2A",
+            "text": "#1A1A1A",
+            "muted": "#747474",
+            "info": "#8F1230",
+            "success": "#1A7A4A",
+            "warning": "#B45309",
+            "error": "#8F1230",
+            "bg": "#FBF7F8",
+            "border": "#FFE2E7",
+            "soft": "#FFF3F5",
+        }
+
+    def make_button(self, parent, text, command, kind="secondary", state="normal"):
+        if not ctk:
+            style = {
+                "primary": "Start.TButton",
+                "accent": "Guess.TButton",
+                "secondary": "Next.TButton",
+            }.get(kind, "Next.TButton")
+            return ttk.Button(parent, text=text, style=style, command=command, state=state)
+
+        styles = {
+            "primary": {
+                "fg_color": self.colors["primary"],
+                "hover_color": self.colors["hero_accent"],
+                "text_color": "#ffffff",
+            },
+            "accent": {
+                "fg_color": self.colors["hero_accent"],
+                "hover_color": self.colors["primary"],
+                "text_color": "#ffffff",
+            },
+            "secondary": {
+                "fg_color": self.colors["card"],
+                "hover_color": self.colors["soft"],
+                "text_color": self.colors["primary"],
+                "border_width": 1,
+                "border_color": self.colors["border"],
+            },
+        }
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            state=state,
+            corner_radius=8,
+            height=36,
+            font=("Segoe UI", 13, "bold"),
+            **styles.get(kind, styles["secondary"]),
+        )
+
+    def make_theme_button(self, parent):
+        text = "☀" if self.theme_mode == "light" else "☾"
+        if ctk:
+            return ctk.CTkButton(
+                parent,
+                text=text,
+                command=self.toggle_color_theme,
+                width=38,
+                height=38,
+                corner_radius=19,
+                fg_color=self.colors["card"],
+                hover_color=self.colors["soft"],
+                text_color=self.colors["primary"],
+                border_width=1,
+                border_color=self.colors["border"],
+                font=("Segoe UI", 18, "bold"),
+            )
+        return tk.Button(
+            parent,
+            text=text,
+            command=self.toggle_color_theme,
+            width=2,
+            height=1,
+            relief="solid",
+            bd=1,
+            bg=self.colors["card"],
+            fg=self.colors["primary"],
+            activebackground=self.colors["soft"],
+            activeforeground=self.colors["primary"],
+            font=("Segoe UI", 15, "bold"),
+        )
+
+    def make_help_button(self, parent):
+        if ctk:
+            return ctk.CTkButton(
+                parent,
+                text="?",
+                command=self.show_instructions_window,
+                width=38,
+                height=38,
+                corner_radius=19,
+                fg_color=self.colors["card"],
+                hover_color=self.colors["soft"],
+                text_color=self.colors["primary"],
+                border_width=1,
+                border_color=self.colors["border"],
+                font=("Segoe UI", 18, "bold"),
+            )
+        return tk.Button(
+            parent,
+            text="?",
+            command=self.show_instructions_window,
+            width=2,
+            height=1,
+            relief="solid",
+            bd=1,
+            bg=self.colors["card"],
+            fg=self.colors["primary"],
+            activebackground=self.colors["soft"],
+            activeforeground=self.colors["primary"],
+            font=("Segoe UI", 15, "bold"),
+        )
+
+    def get_instructions_text(self):
+        return """Alias AI
+
+הוראות וחוקי המשחק
+
+ברוכים הבאים לגרסה הדיגיטלית והחכמה של משחק המילים המפורסם.
+במשחק הזה תצטרכו לנחש מילים סודיות בעזרת רמזים שיופיעו על המסך בזמן אמת.
+
+שלב 1: הגדרת המשחק
+
+לפני שיוצאים לדרך, מגדירים במסך הבית:
+1. קטגוריה: בחרו את נושא המילים שתרצו, למשל אוכל, חפצים, חיות ועוד.
+2. רמת קושי: בחרו את רמת הקושי המתאימה לכם.
+3. שם שחקן: הקלידו את השם שלכם.
+4. מצב אימון: אפשר לסמן מצב אימון כדי לשחק בכיף ללא חישוב ניקוד.
+
+שימו לב:
+בכל שלב במשחק אפשר ללחוץ על כפתור חזרה לבית כדי לשנות שם, קטגוריה או קושי.
+חזרה לדף הבית מאפסת את המשחק, הניקוד והיסטוריית הרמזים, ומתחילה מחדש.
+
+שלב 2: מהלך המשחק
+
+לוחצים על התחל משחק.
+המילה הסודית נבחרת, הטיימר מתחיל לרוץ, והרמז הראשון מופיע.
+לכל מילה יש עד 5 רמזים.
+רמז חדש נפתח רק אחרי ניחוש לא נכון.
+
+כפתורי עזרה במהלך המשחק:
+גלה תשובה: חושף מיד את המילה הסודית.
+דלג: מסיים את המילה הנוכחית ומעביר הלאה.
+למילה הבאה: ממשיך לסבב הבא אחרי שסבב הסתיים.
+
+שלב 3: שיטת הניקוד והזמן
+
+הניקוד נקבע לפי כמות הרמזים שנאלצתם לראות כדי לנחש את המילה:
+ניחוש נכון לפי רמז 1: 10 נקודות.
+ניחוש נכון לפי רמז 2: 7 נקודות.
+ניחוש נכון לפי רמז 3: 4 נקודות.
+ניחוש נכון לפי רמז 4: 2 נקודות.
+ניחוש נכון לפי רמז 5: 0 נקודות.
+
+אם הזמן של המילה הנוכחית נגמר לפני שהספקתם לנחש, המילה תתגלה ותצטרכו ללחוץ על למילה הבאה כדי להמשיך."""
+
+    def show_instructions_window(self):
+        window = ctk.CTkToplevel(self.root) if ctk else tk.Toplevel(self.root)
+        window.title("הוראות וחוקי המשחק")
+        self.configure_window_background(window)
+        window.geometry("680x640")
+        window.minsize(520, 460)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(1, weight=1)
+
+        title_frame = tk.Frame(window, bg=self.colors["hero"], padx=18, pady=14)
+        title_frame.grid(row=0, column=0, sticky="ew")
+        title_frame.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            title_frame,
+            text="הוראות וחוקי המשחק",
+            bg=self.colors["hero"],
+            fg="#ffffff",
+            font=("Helvetica", 22, "bold"),
+            anchor="e",
+            justify="right",
+        ).grid(row=0, column=0, sticky="e")
+
+        body_frame = tk.Frame(
+            window,
+            bg=self.colors["card"],
+            highlightthickness=2,
+            highlightbackground=self.colors["border"],
+        )
+        body_frame.grid(row=1, column=0, sticky="nsew", padx=16, pady=16)
+        body_frame.grid_columnconfigure(0, weight=1)
+        body_frame.grid_rowconfigure(0, weight=1)
+
+        text = tk.Text(
+            body_frame,
+            wrap="word",
+            font=("Helvetica", 13),
+            bg=self.colors["card"],
+            fg=self.colors["text"],
+            relief="flat",
+            padx=18,
+            pady=18,
+            insertbackground=self.colors["text"],
+        )
+        scrollbar = ttk.Scrollbar(body_frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        text.insert("1.0", self.get_instructions_text())
+        text.tag_configure("rtl", justify="right", rmargin=10, lmargin1=10, lmargin2=10)
+        text.tag_configure("title", foreground=self.colors["primary"], font=("Helvetica", 18, "bold"), justify="right")
+        text.tag_add("rtl", "1.0", "end")
+        text.tag_add("title", "1.0", "1.end")
+        text.configure(state="disabled")
+
+        button_frame = tk.Frame(window, bg=self.colors["bg"])
+        button_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 16))
+        button_frame.grid_columnconfigure(0, weight=1)
+        self.make_button(button_frame, text="סגור", command=window.destroy).grid(row=0, column=0, sticky="ew")
+
+    def toggle_color_theme(self):
+        self.theme_mode = "dark" if self.theme_mode == "light" else "light"
+        self.colors = self.get_theme_colors()
+        if ctk:
+            ctk.set_appearance_mode("dark" if self.theme_mode == "dark" else "light")
+        self.configure_window_background(self.root)
+        self.rebuild_layout_after_theme_change()
+
+    def rebuild_layout_after_theme_change(self):
+        show_game = self.active_screen == "game"
+        for screen_name in ("home_screen", "game_screen"):
+            screen = getattr(self, screen_name, None)
+            if screen:
+                screen.destroy()
+        self.configure_styles()
+        self.build_layout()
+        self.populate_categories()
+        self.refresh_multiplayer_status()
+        self.refresh_online_banner()
+        if self.secret_word:
+            self.update_round_title()
+            self.refresh_hints()
+            self.refresh_metrics()
+            for guess in reversed(self.wrong_guesses[-20:]):
+                self.guesses_list.insert(0, rtl_text(guess))
+            self.set_round_controls_state("normal" if not self.round_finished else "disabled")
+            self.show_game_screen()
+        else:
+            self.render_intro_state()
+            if show_game:
+                self.show_game_screen()
+
     # Configure all ttk style themes and self.colors["bg" visual styles used by the app.
     def configure_styles(self):
         style = ttk.Style()
@@ -405,12 +680,12 @@ class AliasGameApp:
         # צבעי בסיס לסגנונות Tkinter/ttk.
         red       = self.colors["primary"]
         red_dark  = self.colors["hero_accent"]
-        red_soft  = "#FFF3F5"
-        red_muted = "#F2B7C2"
-        white     = "#FFFFFF"
-        bg_main   = "#FAFAFA"
-        text_dark = "#1A1A1A"
-        muted     = "#888888"
+        red_soft  = self.colors["soft"]
+        red_muted = self.colors["border"]
+        white     = self.colors["card"]
+        bg_main   = self.colors["bg"]
+        text_dark = self.colors["text"]
+        muted     = self.colors["muted"]
     
         style.configure("App.TFrame", background=bg_main)
     
@@ -419,7 +694,7 @@ class AliasGameApp:
             font=("Segoe UI", 34, "bold"), anchor="center")
     
         style.configure("Subtitle.TLabel",
-            background=red, foreground="#FFCCCC",
+            background=self.colors["hero"], foreground="#FFCCCC",
             font=("Segoe UI", 11), anchor="center")
     
         style.configure("CardTitle.TLabel",
@@ -483,19 +758,23 @@ class AliasGameApp:
             self.home_screen,
             bg=self.colors["hero"],
             highlightthickness=2,
-            highlightbackground="#F2B7C2",
+            highlightbackground=self.colors["border"],
             bd=0,
             padx=30,
             pady=30,
         )
         home_header.grid(row=0, column=0, sticky="ew", pady=(0, 16))
-        home_header.grid_columnconfigure(0, weight=1)
-        ttk.Label(home_header, text="Alias AI", style="Title.TLabel").grid(row=0, column=0, sticky="e")
+        home_header.grid_columnconfigure(0, weight=0)
+        home_header.grid_columnconfigure(1, weight=1)
+        home_header.grid_columnconfigure(2, weight=0)
+        self.make_help_button(home_header).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
+        ttk.Label(home_header, text="Alias AI", style="Title.TLabel").grid(row=0, column=1, sticky="e")
         ttk.Label(
             home_header,
             text="בחר הגדרות, בדוק את המאגר, ואז עבור למשחק",
             style="Subtitle.TLabel",
-        ).grid(row=1, column=0, sticky="e", pady=(6, 0))
+        ).grid(row=1, column=1, sticky="e", pady=(6, 0))
+        self.make_theme_button(home_header).grid(row=0, column=2, rowspan=2, sticky="w", padx=(0, 12))
 
         # מעטפת מסך המשחק.
         outer = self.game_screen
@@ -507,20 +786,24 @@ class AliasGameApp:
             outer,
             bg=self.colors["hero"],
             highlightthickness=2,
-            highlightbackground="#F2B7C2",
+            highlightbackground=self.colors["border"],
             bd=0,
             padx=26,
             pady=26,
         )
         header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
-        header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(0, weight=0)
+        header.grid_columnconfigure(1, weight=1)
+        header.grid_columnconfigure(2, weight=0)
+        header.grid_columnconfigure(3, weight=0)
 
-        ttk.Label(header, text="Alias AI", style="Title.TLabel").grid(row=0, column=0, sticky="e")
+        self.make_help_button(header).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
+        ttk.Label(header, text="Alias AI", style="Title.TLabel").grid(row=0, column=1, sticky="e")
         ttk.Label(
             header,
             text="משחק ניחוש מילים עם רמזים שמתחילים קשים והופכים קלים יותר בכל ניסיון",
             style="Subtitle.TLabel",
-        ).grid(row=1, column=0, sticky="e", pady=(6, 0))
+        ).grid(row=1, column=1, sticky="e", pady=(6, 0))
         self.hero_badge = tk.Label(
             header,
             text="Game Center Style",
@@ -530,7 +813,8 @@ class AliasGameApp:
             padx=18,
             pady=9,
         )
-        self.hero_badge.grid(row=0, column=1, rowspan=2, sticky="w", padx=(0, 12))
+        self.hero_badge.grid(row=0, column=2, rowspan=2, sticky="w", padx=(0, 12))
+        self.make_theme_button(header).grid(row=0, column=3, rowspan=2, sticky="w", padx=(0, 8))
         self.online_banner = tk.Label(
             header,
             text="Solo",
@@ -540,10 +824,10 @@ class AliasGameApp:
             padx=18,
             pady=9,
         )
-        self.online_banner.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        self.online_banner.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(14, 0))
 
         # אזור בחירת קטגוריה, התחלת משחק ובחירת מקור הרמזים.
-        controls_card = tk.Frame(self.home_screen, bg=self.colors["card"], bd=0, highlightthickness=2, highlightbackground="#FFE2E7", padx=26, pady=26)
+        controls_card = tk.Frame(self.home_screen, bg=self.colors["card"], bd=0, highlightthickness=2, highlightbackground=self.colors["border"], padx=26, pady=26)
         controls_card.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         controls_card.grid_columnconfigure(0, weight=1)
         controls_card.grid_columnconfigure(1, weight=1)
@@ -564,11 +848,11 @@ class AliasGameApp:
         )
         self.category_combo.grid(row=0, column=2, sticky="ew", padx=(12, 0))
 
-        self.start_button = ttk.Button(
+        self.start_button = self.make_button(
             controls_card,
             text="התחל משחק",
-            style="Start.TButton",
             command=self.start_game,
+            kind="primary",
         )
         self.start_button.grid(row=0, column=0, columnspan=2, sticky="ew", padx=(12, 0))
 
@@ -741,10 +1025,9 @@ class AliasGameApp:
         self.room_entry.grid(row=5, column=2, sticky="ew", padx=(12, 0), pady=(14, 0))
         self.enable_entry_edit_shortcuts(self.room_entry)
 
-        self.new_room_button = ttk.Button(
+        self.new_room_button = self.make_button(
             controls_card,
             text="חדר חדש",
-            style="Next.TButton",
             command=self.clear_room_code,
         )
         self.new_room_button.grid(row=5, column=1, sticky="ew", padx=(12, 0), pady=(14, 0))
@@ -754,18 +1037,16 @@ class AliasGameApp:
         server_buttons_frame.grid_columnconfigure(0, weight=1)
         server_buttons_frame.grid_columnconfigure(1, weight=1)
 
-        self.server_paste_button = ttk.Button(
+        self.server_paste_button = self.make_button(
             server_buttons_frame,
             text="הדבק כתובת",
-            style="Next.TButton",
             command=self.paste_server_url,
         )
         self.server_paste_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-        self.server_test_button = ttk.Button(
+        self.server_test_button = self.make_button(
             server_buttons_frame,
             text="בדוק שרת",
-            style="Next.TButton",
             command=self.test_server_connection,
         )
         self.server_test_button.grid(row=0, column=0, sticky="ew")
@@ -799,16 +1080,16 @@ class AliasGameApp:
         for index in range(4):
             tools_frame.grid_columnconfigure(index, weight=1)
 
-        ttk.Button(tools_frame, text="שיאים", style="Next.TButton", command=self.show_high_scores).grid(
+        self.make_button(tools_frame, text="שיאים", command=self.show_high_scores).grid(
             row=0, column=3, sticky="ew", padx=(0, 8)
         )
-        ttk.Button(tools_frame, text="סטטיסטיקה", style="Next.TButton", command=self.show_category_stats).grid(
+        self.make_button(tools_frame, text="סטטיסטיקה", command=self.show_category_stats).grid(
             row=0, column=2, sticky="ew", padx=8
         )
-        ttk.Button(tools_frame, text="ייצוא סיכום", style="Next.TButton", command=self.export_last_summary).grid(
+        self.make_button(tools_frame, text="ייצוא סיכום", command=self.export_last_summary).grid(
             row=0, column=1, sticky="ew", padx=8
         )
-        ttk.Button(tools_frame, text="חלון נוסף", style="Next.TButton", command=self.open_additional_window).grid(
+        self.make_button(tools_frame, text="חלון נוסף", command=self.open_additional_window).grid(
             row=0, column=0, sticky="ew", padx=(8, 0)
         )
 
@@ -817,34 +1098,31 @@ class AliasGameApp:
         for index in range(5):
             game_actions.grid_columnconfigure(index, weight=1)
 
-        ttk.Button(game_actions, text="חזרה לבית", style="Next.TButton", command=self.return_home).grid(
+        self.make_button(game_actions, text="חזרה לבית", command=self.return_home).grid(
             row=0, column=4, sticky="ew", padx=(0, 8)
         )
-        self.next_button = ttk.Button(
+        self.next_button = self.make_button(
             game_actions,
             text="למילה הבאה",
-            style="Next.TButton",
             command=self.next_round,
             state="disabled",
         )
         self.next_button.grid(row=0, column=3, sticky="ew", padx=8)
-        self.skip_button = ttk.Button(
+        self.skip_button = self.make_button(
             game_actions,
             text="דלג",
-            style="Next.TButton",
             command=self.skip_round,
             state="disabled",
         )
         self.skip_button.grid(row=0, column=2, sticky="ew", padx=8)
-        self.extra_hint_button = ttk.Button(
+        self.extra_hint_button = self.make_button(
             game_actions,
             text="רמז AI נוסף",
-            style="Next.TButton",
             command=self.request_extra_ai_hint,
             state="disabled",
         )
         self.extra_hint_button.grid(row=0, column=1, sticky="ew", padx=8)
-        ttk.Button(game_actions, text="ייצוא סיכום", style="Next.TButton", command=self.export_last_summary).grid(
+        self.make_button(game_actions, text="ייצוא סיכום", command=self.export_last_summary).grid(
             row=0, column=0, sticky="ew", padx=(8, 0)
         )
 
@@ -953,19 +1231,18 @@ class AliasGameApp:
         self.enable_entry_edit_shortcuts(self.guess_entry)
         self.guess_entry.bind("<Return>", self.submit_guess)
 
-        self.submit_button = ttk.Button(
+        self.submit_button = self.make_button(
             input_card,
             text="בדיקת ניחוש",
-            style="Guess.TButton",
             command=self.submit_guess,
             state="disabled",
+            kind="accent",
         )
         self.submit_button.grid(row=2, column=0, sticky="ew")
 
-        self.reveal_button = ttk.Button(
+        self.reveal_button = self.make_button(
             input_card,
             text="גלה תשובה",
-            style="Next.TButton",
             command=self.reveal_answer,
             state="disabled",
         )
@@ -1066,7 +1343,7 @@ class AliasGameApp:
         return "break"
 
     def open_additional_window(self):
-        new_window = tk.Toplevel(self.root)
+        new_window = ctk.CTkToplevel(self.root) if ctk else tk.Toplevel(self.root)
         AliasGameApp(new_window)
 
     # Load categories from words.py and refresh category combobox values and summary.
@@ -1304,11 +1581,13 @@ class AliasGameApp:
         if not self.multiplayer_active and not self.secret_word:
             self.set_setup_controls_state("normal")
         self.home_screen.tkraise()
+        self.active_screen = "home"
         self.root.title("Alias AI - בית")
 
     # מציג את מסך המשחק אחרי שההגדרות נבחרו.
     def show_game_screen(self):
         self.game_screen.tkraise()
+        self.active_screen = "game"
         self.root.title("Alias AI - משחק")
 
     # חוזר למסך הבית, עם אישור אם סבב עדיין פעיל.
@@ -1780,9 +2059,9 @@ class AliasGameApp:
             self.achievements.add("חסכוני ברמזים")
 
     def show_game_over_window(self, summary):
-        window = tk.Toplevel(self.root)
+        window = ctk.CTkToplevel(self.root) if ctk else tk.Toplevel(self.root)
         window.title("סיום משחק")
-        window.configure(bg=self.colors["bg"])
+        self.configure_window_background(window)
         window.geometry("620x580")
         window.minsize(520, 460)
         window.grid_columnconfigure(0, weight=1)
@@ -1838,10 +2117,10 @@ class AliasGameApp:
         buttons.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 16))
         buttons.grid_columnconfigure(0, weight=1)
         buttons.grid_columnconfigure(1, weight=1)
-        ttk.Button(buttons, text="משחק חדש", style="Start.TButton", command=lambda: (window.destroy(), self.start_game())).grid(
+        self.make_button(buttons, text="משחק חדש", command=lambda: (window.destroy(), self.start_game()), kind="primary").grid(
             row=0, column=1, sticky="ew", padx=(0, 8)
         )
-        ttk.Button(buttons, text="סגור", style="Next.TButton", command=window.destroy).grid(
+        self.make_button(buttons, text="סגור", command=window.destroy).grid(
             row=0, column=0, sticky="ew", padx=(8, 0)
         )
 
@@ -2393,8 +2672,12 @@ class AliasGameApp:
 
 # Entry point: initialize TK root and launch the AliasGameApp.
 def main():
+    if ctk:
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
+
     try:
-        root = tk.Tk()
+        root = ctk.CTk() if ctk else tk.Tk()
     except tk.TclError as error:
         print(f"לא ניתן לפתוח חלון גרפי: {error}")
         print("נסה להריץ את הקובץ מסביבה גרפית רגילה על המחשב.")
