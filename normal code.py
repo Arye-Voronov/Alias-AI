@@ -889,6 +889,58 @@ class AliasGameApp:
         )
         self.status_box.grid(row=1, column=0, sticky="ew", pady=(12, 10))
 
+        # פונקציית למדא ישירה לפתיחת החלון ללא תלות במיקום פונקציות אחרות בקובץ
+        self.rules_btn = tk.Button(
+            game_card, text="❓ חוקי המשחק", font=("Arial", 11, "bold"),
+            bg="white", fg="#b30021", cursor="hand2",
+            command=lambda: [
+                rules_win := tk.Toplevel(self.root),
+                rules_win.title("📜 הוראות וחוקי המשחק: Alias AI"),
+                rules_win.geometry("650x600"),
+                rules_win.configure(bg="#f8f9fa"),
+                rules_win.wm_attributes("-topmost", True),
+                tk.Label(rules_win, text="📜 הוראות וחוקי המשחק: Alias AI", font=("Arial", 16, "bold"), bg="#f8f9fa", fg="#b30021").pack(pady=12),
+                frame := tk.Frame(rules_win, bg="#f8f9fa"),
+                frame.pack(expand=True, fill="both", padx=20, pady=5),
+                scrollbar := tk.Scrollbar(frame),
+                scrollbar.pack(side="left", fill="y"),
+                text_widget := tk.Text(frame, wrap="word", font=("Arial", 11), bg="white", yscrollcommand=scrollbar.set, padx=15, pady=15, spacing1=6, cursor="arrow"),
+                text_widget.pack(expand=True, fill="both"),
+                scrollbar.configure(command=text_widget.yview),
+                text_widget.insert("1.0", """ברוכים הבאים לגרסה הדיגיטלית והחכמה של משחק המילים המפורסם! במשחק זה תצטרכו לנחש מילים סודיות בעזרת רמזים שיופיעו על המסך בזמן אמת.
+
+🛠️ שלב 1: הגדרת המשחק (בתפריט הראשי)
+לפני שיוצאים לדרך, מגדירים את הנתונים במסך הבית:
+1. שם שחקן: הקלידו את השם שלכם.
+2. בחירת קטגוריה: בחרו את נושא המילים שתרצו (אוכל, חפצים, חיות ועוד).
+3. רמת קושי: בחרו את רמת הקושי המתאימה לכם.
+4. מצב אימון: ניתן לסמן "מצב אימון" כדי לשחק בכיף ללא חישוב ניקוד.
+
+⚠️ חזרה לדף הבית: בכל שלב במשחק ניתן ללחוץ על כפתור "חזור לדף הבית" כדי לשנות שם, קטגוריה או קושי. שימו לב: חזרה לדף הבית מוחקת את היסטוריית המשחק, והניקוד יתאפס ויתחיל מהתחלה!
+
+🎮 שלב 2: מהלך המשחק והרמזים
+• לוחצים על "התחל משחק" – המילה הסודית נבחרת, הטיימר מתחיל לרוץ, והרמז הראשון מופיע.
+• איך מקבלים עוד רמזים? אי אפשר לבקש רמז סתם כך. הרמז הבא ייחשף רק אם ניחשתם לא נכון. לכל מילה יש מקסימום 5 רמזים.
+• כפתורי עזרה במהלך המשחק:
+  - גלה תשובה: אם נתקעתם, לחיצה על כפתור זה תחשוף מיד את המילה הסודית, ותאפשר לכם ללחוץ על "למילה הבאה".
+  - דלג: לחיצה על כפתור זה תחשוף את המילה הנוכחית ותעביר אתכם הלאה.
+
+📈 שלב 3: שיטת הניקוד והזמן
+הניקוד שלכם נקבע לפי כמות הרמזים שנאלצתם לראות כדי לנחש את המילה:
+• 🎯 ניחוש נכון לפי רמז 1 👈 זוכה ב-10 נקודות
+• 🎯 ניחוש נכון לפי 2 רמזים 👈 זוכה ב-7 נקודות
+• 🎯 ניחוש נכון לפי 3 רמזים 👈 זוכה ב-4 נקודות
+• 🎯 ניחוש נכון לפי 4 רמזים 👈 זוכה ב-2 נקודות
+• 🎯 ניחוש נכון לפי 5 רמזים 👈 לא מזכה בנקודות (0 נק').
+
+⏱️ הזמן עבר! הטיימר מוגדר לכל מילה בנפרד. אם הזמן של המילה הנוכחית נגמר לפני שהספקתם לנחש – המילה הסודית תתגלה אוטומטית, ותצטרכו ללחוץ על "למילה הבאה" כדי להמשיך."""),
+                text_widget.tag_configure("right", justify="right"),
+                text_widget.tag_add("right", "1.0", "end"),
+                text_widget.configure(state="disabled"),
+                tk.Button(rules_win, text="הבנתי, סגור חלון", font=("Arial", 10, "bold"), bg="#b30021", fg="white", command=rules_win.destroy, cursor="hand2").pack(pady=12)
+            ]
+        )
+        self.rules_btn.grid(row=10, column=0, sticky="ew", pady=(15, 5))
         self.progress_label = ttk.Label(game_card, text="התקדמות בסבב", style="Body.TLabel")
         self.progress_label.grid(row=2, column=0, sticky="e", pady=(0, 6))
 
@@ -2380,7 +2432,7 @@ class AliasGameApp:
         if current_hint_count > previous_hint_count:
             self.animate_new_hint()
 
-    # מצב פתיחה לפני שהמשתמש התחיל סבב.
+        # מצב פתיחה לפני שהמשתמש התחיל סבב.
     def render_intro_state(self):
         self.refresh_metrics()
         self.refresh_hints()
@@ -2389,7 +2441,6 @@ class AliasGameApp:
         self.reveal_button.configure(state="disabled")
         self.extra_hint_button.configure(state="disabled")
         self.show_home_screen()
-
 
 # Entry point: initialize TK root and launch the AliasGameApp.
 def main():
